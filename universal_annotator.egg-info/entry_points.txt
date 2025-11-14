@@ -1,0 +1,2 @@
+[console_scripts]
+run-annotator = universal_annotator.app.main:main
