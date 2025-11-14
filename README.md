@@ -209,7 +209,6 @@ See `requirements.txt` for complete list:
 - **No Label Editing**: The class label of an existing bounding box cannot be changed. To change a label, you must delete the box and recreate it.
 - Single object per box (no segmentation)
 - Rectangular boxes only (no rotated or polygonal annotations)
-- Maximum box size limited by image dimensions
 
 ## Future Enhancements
 
