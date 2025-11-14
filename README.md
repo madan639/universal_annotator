@@ -1,23 +1,28 @@
 # Universal Annotator
 
-A professional, modern, and comprehensive image annotation tool for creating bounding box annotations. It supports multiple export formats, features a rich user interface with a dark theme, and is designed for an efficient workflow with extensive keyboard shortcuts.
+A professional, modern, and powerful image annotation tool designed for creating bounding box annotations with maximum efficiency. It supports multiple formats, features an intelligent and rich user interface, and is packed with advanced features like nested annotations and extensive keyboard shortcuts.
 
 ![Universal Annotator UI](assets/icons/image.png)
 
-## Features
+## Key Features
 
 ### Core Features
 - **Multiple Export Formats**: Save annotations in **TXT**, **JSON**, and **COCO** formats.
+   - Converters and exporters now use dedicated output folders by default (for example: `converted_txt/`, `converted_json/`, `converted_coco_json/`) to avoid overwriting root label files.
 - **Dual Annotation Modes**:
     - **Edit Mode**: For creating, and modifying annotations.
     - **View Mode**: A read-only mode for safe reviewing.
+- **Advanced Editing**: Interactively move and resize any bounding box using intuitive drag handles.
+- **Nested Annotations**: Create bounding boxes inside existing ones, perfect for annotating objects within objects.
 - **Intelligent Image Sorting**: Uses natural sorting to correctly order files like `image_2.jpg` before `image_10.jpg`.
 - **Selection Memory**: Remembers which bounding boxes were selected for each image, restoring them when you navigate back.
 - **Auto-Save**: Automatically saves your work when you move to the next or previous image, preventing data loss.
 - **Format Auto-Detection**: Automatically detects the annotation format from existing label files in the selected directory.
+- **JSON Class Discovery**: Intelligently scans your JSON files to discover class names, prompting you to confirm and apply them automatically.
 
 ### UI Features 
 - **Professional Dark Theme**: A beautiful dark theme for user comfort.
+- **Mouse Wheel Zoom**: Zoom in and out of images effortlessly using the mouse wheel.
 - **Complete Menu Bar**: A full menu bar provides access to all application features.
 - **Rich Status Bar**: Get real-time feedback on the current image, box count, annotation format, and operational mode.
 - **Comprehensive Help System**: An in-app help dialog (**F1**) provides a getting started guide, a full list of keyboard shortcuts, and annotation tips.
@@ -39,34 +44,46 @@ pip install -r requirements.txt
 
 ### 3. Run Application
 ```bash
-python main.py
+python app.py
 ```
 
 ## Usage
 
 ### Basic Workflow
 
-1. **Load Dataset**
-   - Click "Load Dataset" button
-   - Select folder with images
-   - Select folder with labels
-   - Format is auto-detected or you can select manually
+1. **Load Data**
+   - Click **"Load Dataset"** to select your image and label folders.
+   - The annotation format is auto-detected. If no labels exist, you can select a format manually.
+   - By default, the app supports JPG, PNG, BMP, TIFF, and WebP image formats.
+   - By default, the app looks for label files in the selected label folder that match the image filenames. The Default format is TXT.
+   - you can change the format later if needed.
 
-2. **Choose Annotation Format**
-   - **TXT**: Normalized bounding box coordinates in .txt files
-   - **JSON**: Custom format with absolute coordinates
-   - **COCO**: COCO-format JSON with multiple images
+2. **Annotate Images**
+   - Press **E** to enter **Edit Mode**.
+   - Press **M** to enter **Drawing Mode**. The status bar will confirm you can now draw.
+   - Click and drag on the image to draw a bounding box.
+   - Select the appropriate class from the dialog that appears.
+   - Use **A/D** or the **Previous/Next** buttons to navigate between images.
 
 3. **Annotate Images**
    - Switch to Edit Mode
    - Click and drag to draw bounding boxes
    - Select class when prompted
    - Use A/D or Previous/Next to navigate
+   - Click and drag on the image to draw a new bounding box.
+   - Select a class for the new box from the dialog that appears.
+   - To remove a box, select it in the right-hand panel and click the "Delete Selected" button or press the `Delete` key.
 
-4. **Save Annotations**
-   - Click Save button or press S
-   - Auto-save keeps changes synchronized
-   - Status bar shows save confirmation
+3. **Edit Annotations**
+   - In **Edit Mode** (but not Drawing Mode), click on a box to select it.
+   - Drag the handles to resize it or drag the box itself to move it.
+   - To create a box inside another, press **M** and draw within the parent box.
+   - Press **Delete** to remove any selected boxes.
+
+4. **Save Your Work**
+   - Press **S** to save manually.
+   - Enable the **"Auto Save"** checkbox to save automatically every time you switch images.
+   - The status bar will confirm when annotations are saved.
 
 ### Supported Annotation Formats
 
@@ -76,6 +93,7 @@ python main.py
 0 0.5 0.5 0.3 0.4
 1 0.2 0.7 0.2 0.3
 ```
+Note: TXT files use normalized center-based coordinates (xc, yc, w, h) in the 0..1 range. The app's TXT loader converts these to pixel coordinates when displaying on the canvas.
 
 #### JSON Format
 ```json
@@ -85,7 +103,8 @@ python main.py
     {"bbox": [x, y, w, h], "category_id": 1}
   ]
 }
-```
+``` 
+Note: The JSON loader is highly flexible. It automatically detects and parses various structures, including `objects` or `annotations` arrays, and can even extract class names from keys like `className`, `label`, or `category`. It also auto-detects and converts normalized coordinates to pixel values.
 
 #### COCO Format
 Standard COCO dataset format with images and annotations arrays.
@@ -101,18 +120,36 @@ bicycle
 dog
 cat
 ```
+### keyboard Shortcuts
+Press D for Next
+A for Previous
+S for Save 
+E for Edit Mode
+V for View Mode
+M for makeing bboxes in Edit Mode
+X for Exiting From making Bboxes and Edit the Previous Bboxes
 
-### Theme
-Edit `main.py` to switch themes:
-```python
-theme_manager = ThemeManager("dark")  
-```
+###
+
 
 ### Default Settings
 Edit `utils/config.py` for:
 - Default colors
 - Line widths
 - Application name and version
+
+## Converters & Export Folders
+
+- By default conversion commands write outputs into a `converted_*` subfolder in the same label/input folder. Examples:
+   - TXT conversion output → `converted_txt/`
+   - JSON conversion output → `converted_json/`
+   - COCO merge/convert output → `converted_coco_json/_annotations.coco.json`
+
+- This prevents accidental creation or overwriting of a root-level `_annotations.coco.json` unless you explicitly save/export to the label folder.
+
+## Notes about COCO files
+
+- The application uses a single COCO JSON file structure when saving/loading COCO datasets. Converter utilities create a `converted_coco_json/_annotations.coco.json` by default. The app may also create or update a `_annotations.coco.json` in a label folder when saving annotations in COCO mode or when using certain exporters — be aware of which folder you are saving to if you want to keep converted outputs separated.
 
 ## Documentation
 
@@ -169,13 +206,14 @@ See `requirements.txt` for complete list:
 
 ## Known Limitations
 
+- **No Label Editing**: The class label of an existing bounding box cannot be changed. To change a label, you must delete the box and recreate it.
 - Single object per box (no segmentation)
 - Rectangular boxes only (no rotated or polygonal annotations)
-- COCO format uses single file for all images
 - Maximum box size limited by image dimensions
 
 ## Future Enhancements
 
+- **In-place Label Editing**: Ability to change the class of an existing bounding box without deleting it.
 - Polygon and segmentation support
 - Keyboard shortcut customization
 - Additional export formats
@@ -215,5 +253,6 @@ Built with:
 Current Version: 1.0.0
 
 Last Updated: November 2025
-# universal_annotator
-# universal_annotator
+
+## Author 
+Madan Mohan Jha
