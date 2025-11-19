@@ -61,6 +61,7 @@ class AnnotatorMainWindow(QMainWindow):
         # --- State ---
         self.image_dir = None
         self.label_dir = None
+        self.coco_file_path = None  # Path to COCO annotation file
         self.format = "TXT"  # Default format is TXT
         self.mode = "view"
         self.image_files = []
@@ -374,7 +375,7 @@ class AnnotatorMainWindow(QMainWindow):
 
     def load_classes_file(self):
         """Allow user to pick a classes file (txt or json) and reload classes."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select Class File", os.getcwd(), "JSON Files (*.json)","txt Files (*.txt)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Class File", os.getcwd(), "JSON Files (*.json);;Text Files (*.txt);;All Files (*)")
         if not file_path:
             return
         
@@ -382,6 +383,10 @@ class AnnotatorMainWindow(QMainWindow):
             self.class_manager.set_classes_file(file_path)
             self.canvas.classes = self.class_manager.get_classes()
             self._show_loaded_classes_dialog()
+            # Refresh labels panel to show correct class names for current annotations
+            if self.canvas.boxes:
+                self.update_labels_panel(self.canvas.boxes)
+                self.canvas.update()
             return
 
         try:
@@ -436,6 +441,7 @@ class AnnotatorMainWindow(QMainWindow):
 
                 # Refresh UI and mappings
                 self.update_labels_panel(self.canvas.boxes)
+                self.canvas.update()
                 self.app_status_bar.set_status(f"Loaded {len(extracted_classes)} classes from JSON.")
                 logging.info(f"Loaded {len(extracted_classes)} classes from '{file_path}'.")
                 return True
@@ -540,63 +546,258 @@ class AnnotatorMainWindow(QMainWindow):
 
     # ----------------------------------------------------------------
     def reload_data_for_new_format(self):
-        """Prompts user to reload data after changing format."""
-        # Only show the pop-up if a dataset is already loaded
+        """When user changes format, let them select images and decide on labels."""
         logging.info(f"Format changed to {self.format}.")
-        if self.image_dir:
-            QMessageBox.information(self, "Format Changed", f"Annotation format has been changed to {self.format}.\nPlease select the corresponding dataset.")
-            logging.info("Prompting user to reload dataset for new format.")
-        else:
-            self.app_status_bar.set_status(f"Format set to {self.format}. Please load a dataset.")
         
-        if self.format in ["TXT", "JSON"]:
-            # For TXT/JSON, ask for image and label folders again
-            # honor the current format choice when reloading
-            self.load_dataset(prefer_format=self.format)
-        elif self.format == "COCO":
-            # Loop until a valid COCO dataset is loaded or user cancels
-            while True:
-                # For COCO, ask for the single annotation file first
-                coco_path, _ = QFileDialog.getOpenFileName(self, "Select COCO Annotation File", os.getcwd(), "COCO JSON (*.json)")
-                if not coco_path:
-                    logging.warning("COCO data loading cancelled by user at annotation file selection.")
+        # For COCO, use different workflow
+        if self.format == "COCO":
+            self._reload_data_for_coco()
+            return
+        
+        # For TXT and JSON
+        # Ask user to select image folder
+        img_dir = QFileDialog.getExistingDirectory(self, "Select Image Folder")
+        if not img_dir:
+            logging.info("Format change cancelled - no image folder selected")
+            return
+        
+        # Get image files
+        image_files = list_images(img_dir)
+        if not image_files:
+            QMessageBox.warning(self, "No Images", "No image files found in the selected folder.")
+            logging.warning(f"No images found in: {img_dir}")
+            return
+        
+        image_files = sorted(image_files, key=natural_sort_key)
+        
+        # Ask: Create new label files OR use existing
+        reply = QMessageBox.question(
+            self, "Label Files",
+            f"Do you want to:\n\n"
+            f"YES: Create new label files in {self.format} format\n"
+            f"NO: Use existing label files",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Create new label files
+            img_parent = os.path.dirname(img_dir.rstrip('/\\'))
+            suggested_lbl_dir = os.path.join(img_parent, 'labels')
+            
+            # Check if labels folder exists
+            if os.path.isdir(suggested_lbl_dir):
+                warn_reply = QMessageBox.warning(
+                    self, "Labels Folder Exists",
+                    f"Labels folder already exists at:\n{suggested_lbl_dir}\n\n"
+                    f"This will create new files and may overwrite existing ones.\n\n"
+                    f"Continue?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if warn_reply == QMessageBox.No:
                     return
+            
+            try:
+                os.makedirs(suggested_lbl_dir, exist_ok=True)
+                lbl_dir = suggested_lbl_dir
+                logging.info(f"Created labels folder: {lbl_dir}")
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to create labels folder:\n{str(e)}")
+                logging.error(f"Failed to create labels folder: {e}")
+                return
+            
+            # Set and create files
+            self.image_dir = img_dir
+            self.label_dir = lbl_dir
+            self.image_files = image_files
+            self.current_index = 0
+            self.selected_box_indices = set()
+            self.image_selections = {}
+            
+            self._create_initial_files()
+            self.load_image()
+            self.app_status_bar.set_status(f"Dataset loaded with {self.format} format.")
+            logging.info(f"Dataset loaded with {self.format} format. Images: {len(image_files)}")
+        
+        else:
+            # Use existing label files
+            lbl_dir = QFileDialog.getExistingDirectory(self, "Select Label Folder")
+            if not lbl_dir:
+                logging.info("Label folder selection cancelled")
+                return
+            
+            # Check if label files exist for this format
+            label_files_exist = False
+            if os.path.isdir(lbl_dir):
+                try:
+                    files = os.listdir(lbl_dir)
+                    if self.format == "TXT":
+                        label_files_exist = any(f.endswith('.txt') for f in files)
+                    elif self.format == "JSON":
+                        label_files_exist = any(f.endswith('.json') for f in files)
+                except Exception:
+                    pass
+            
+            if not label_files_exist:
+                QMessageBox.warning(
+                    self, "No Labels Found",
+                    f"No {self.format} label files found in:\n{lbl_dir}\n\n"
+                    f"Please select a folder with {self.format} files or create new ones."
+                )
+                logging.warning(f"No {self.format} files found in: {lbl_dir}")
+                return
+            
+            # Set and load
+            self.image_dir = img_dir
+            self.label_dir = lbl_dir
+            self.image_files = image_files
+            self.current_index = 0
+            self.selected_box_indices = set()
+            self.image_selections = {}
+            
+            self.load_image()
+            self.app_status_bar.set_status(f"Dataset loaded with {self.format} format.")
+            logging.info(f"Dataset loaded with {self.format} format. Images: {len(image_files)}")
 
-                # Confirm classes from the COCO file before proceeding
-                classes_confirmed = self._confirm_and_load_classes_from_json(coco_path)
-                if not classes_confirmed:
-                    # User cancelled class confirmation, restart the loop
-                    continue
-
-                # Now, ask for the image folder
-                img_dir = QFileDialog.getExistingDirectory(self, "Select Image Folder")
-                if not img_dir:
-                    logging.warning("COCO data loading cancelled by user at image folder selection.")
-                    # User cancelled folder selection, restart the loop to ask for COCO file again
-                    continue
-
-                image_files = sorted(list_images(img_dir), key=natural_sort_key)
-
-                if not image_files:
-                    msg = "No image files found in the selected folder. Please select the correct folder."
-                    QMessageBox.warning(self, "No Images Found", msg)
-                    logging.warning(f"{msg} Path: {img_dir}")
-                    # No images found, restart the loop
-                    continue
-
-                # --- Success case: Valid folders selected ---
-                self.image_dir = img_dir
-                self.label_dir = os.path.dirname(coco_path)  # The folder containing the COCO file
-                self.image_files = image_files
-                self.current_index = 0
-                self.selected_box_indices = set()
-                self.image_selections = {}
-                self.load_image()
-                self.app_status_bar.set_status("COCO dataset loaded successfully.")
-                logging.info(f"COCO dataset loaded. Images: {len(self.image_files)}. Annotations: {coco_path}")
+    def _reload_data_for_coco(self):
+        """Special workflow for COCO format: select image folder and COCO file."""
+        logging.info("COCO format: Starting workflow...")
+        
+        # Step 1: Select image folder
+        img_dir = QFileDialog.getExistingDirectory(self, "Select Image Folder")
+        if not img_dir:
+            logging.info("COCO workflow cancelled - no image folder selected")
+            return
+        
+        # Get image files
+        image_files = list_images(img_dir)
+        if not image_files:
+            QMessageBox.warning(self, "No Images", "No image files found in the selected folder.")
+            logging.warning(f"No images found in: {img_dir}")
+            return
+        
+        image_files = sorted(image_files, key=natural_sort_key)
+        
+        # Step 2: Ask - Create new COCO file or use existing
+        reply = QMessageBox.question(
+            self, "COCO Annotation File",
+            f"Do you want to:\n\n"
+            f"YES: Create new COCO annotation file\n"
+            f"NO: Use existing COCO annotation file",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Create new COCO file in same parent as images
+            img_parent = os.path.dirname(img_dir.rstrip('/\\'))
+            coco_file_path = os.path.join(img_parent, '_annotations.coco.json')
+            
+            # Check if file exists
+            if os.path.isfile(coco_file_path):
+                warn_reply = QMessageBox.warning(
+                    self, "COCO File Exists",
+                    f"COCO file already exists at:\n{coco_file_path}\n\n"
+                    f"This will create a new file and overwrite existing annotations.\n\n"
+                    f"Continue?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if warn_reply == QMessageBox.No:
+                    return
+            
+            # Create COCO structure with images
+            coco_data = {
+                "info": {"description": "COCO dataset created by Universal Annotator"},
+                "licenses": [],
+                "images": [],
+                "annotations": [],
+                "categories": []
+            }
+            
+            # Add image entries
+            for idx, img_file in enumerate(image_files):
+                img_path = os.path.join(img_dir, img_file)
+                try:
+                    from PIL import Image
+                    img = Image.open(img_path)
+                    width, height = img.size
+                except Exception:
+                    width, height = 0, 0
                 
-                # Exit the loop on success
-                break
+                coco_data["images"].append({
+                    "id": idx + 1,
+                    "file_name": img_file,
+                    "width": width,
+                    "height": height
+                })
+            
+            # Save COCO file
+            try:
+                with open(coco_file_path, 'w') as f:
+                    json.dump(coco_data, f, indent=2)
+                logging.info(f"Created COCO file: {coco_file_path}")
+                QMessageBox.information(
+                    self, "COCO File Created",
+                    f"Created COCO annotation file:\n{coco_file_path}\n\n"
+                    f"Ready to annotate {len(image_files)} images."
+                )
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to create COCO file:\n{str(e)}")
+                logging.error(f"Failed to create COCO file: {e}")
+                return
+            
+            # Set paths and load
+            self.image_dir = img_dir
+            self.label_dir = img_parent
+            self.image_files = image_files
+            self.current_index = 0
+            self.selected_box_indices = set()
+            self.image_selections = {}
+            self.coco_file_path = coco_file_path
+            
+            self.load_image()
+            self.app_status_bar.set_status(f"Dataset loaded with COCO format.")
+            logging.info(f"Dataset loaded with COCO format. Images: {len(image_files)}. COCO file: {coco_file_path}")
+        
+        else:
+            # Use existing COCO file
+            coco_path, _ = QFileDialog.getOpenFileName(
+                self, "Select COCO Annotation File", os.getcwd(), "COCO JSON (*.json);;All Files (*)"
+            )
+            if not coco_path:
+                logging.info("COCO file selection cancelled")
+                return
+            
+            # Validate COCO file
+            try:
+                with open(coco_path, 'r') as f:
+                    coco_data = json.load(f)
+                
+                if not isinstance(coco_data, dict) or 'images' not in coco_data:
+                    QMessageBox.warning(self, "Invalid COCO File", "Selected file is not a valid COCO format file.")
+                    logging.warning(f"Invalid COCO file: {coco_path}")
+                    return
+                
+                logging.info(f"Validated COCO file with {len(coco_data.get('images', []))} images")
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to read COCO file:\n{str(e)}")
+                logging.error(f"Failed to read COCO file: {e}")
+                return
+            
+            # Set paths and load
+            self.image_dir = img_dir
+            self.label_dir = os.path.dirname(coco_path)
+            self.image_files = image_files
+            self.current_index = 0
+            self.selected_box_indices = set()
+            self.image_selections = {}
+            self.coco_file_path = coco_path
+            
+            self.load_image()
+            self.app_status_bar.set_status(f"Dataset loaded with COCO format.")
+            logging.info(f"Dataset loaded with COCO format. Images: {len(image_files)}. COCO file: {coco_path}")
+
+
 
     def load_dataset(self, prefer_format=None):
         # ---------------------------------------------------------
@@ -606,6 +807,7 @@ class AnnotatorMainWindow(QMainWindow):
         self.json_bbox_methods = []
         self._cached_json_structure = None
         self.detected_classes = []
+        self.coco_file_path = None  # Reset COCO file path
         # Controls whether per-image JSON textual names are used for label display.
         # Default: do NOT show JSON-derived per-box names until the user confirms
         # discovered classes or manually provides classes.
@@ -662,9 +864,60 @@ class AnnotatorMainWindow(QMainWindow):
         img_dir = QFileDialog.getExistingDirectory(self, "Select Image Folder")
         if not img_dir:
             return
-        lbl_dir = QFileDialog.getExistingDirectory(self, "Select Label Folder")
-        if not lbl_dir:
-            return
+        
+        # Suggest labels folder in same parent directory as images
+        img_parent = os.path.dirname(img_dir.rstrip('/\\'))
+        img_basename = os.path.basename(img_dir.rstrip('/\\'))
+        suggested_lbl_dir = os.path.join(img_parent, 'labels')
+        
+        # Check if labels folder already exists
+        folder_exists = os.path.isdir(suggested_lbl_dir)
+        
+        # Ask user: Create new labels folder or select existing
+        if folder_exists:
+            msg = (f"Image folder: {img_dir}\n\n"
+                   f"Labels folder already exists at: {suggested_lbl_dir}\n\n"
+                   f"Would you like to:\n"
+                   f"- YES: Use existing labels folder at {suggested_lbl_dir}\n"
+                   f"- NO: Select a different labels folder manually")
+        else:
+            msg = (f"Image folder: {img_dir}\n\n"
+                   f"Suggested labels folder: {suggested_lbl_dir}\n\n"
+                   f"Would you like to:\n"
+                   f"- YES: Create new labels folder at {suggested_lbl_dir}\n"
+                   f"- NO: Select existing labels folder manually")
+        
+        reply = QMessageBox.question(
+            self, "Labels Folder",
+            msg,
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        created_new_folder = False
+        if reply == QMessageBox.Yes:
+            if folder_exists:
+                # Folder already exists, use it
+                lbl_dir = suggested_lbl_dir
+                logging.info(f"Using existing labels folder: {lbl_dir}")
+            else:
+                # Create new labels folder
+                try:
+                    os.makedirs(suggested_lbl_dir, exist_ok=True)
+                    lbl_dir = suggested_lbl_dir
+                    created_new_folder = True
+                    logging.info(f"Created labels folder: {lbl_dir}")
+                    QMessageBox.information(self, "Labels Folder Created", 
+                        f"✓ Labels folder created successfully at:\n{lbl_dir}\n\nTXT files will be created for your images.")
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Failed to create labels folder:\n{str(e)}")
+                    logging.error(f"Failed to create labels folder: {e}")
+                    return
+        else:
+            # User selects different folder
+            lbl_dir = QFileDialog.getExistingDirectory(self, "Select Label Folder")
+            if not lbl_dir:
+                return
+            logging.info(f"User selected labels folder: {lbl_dir}")
 
         self.image_dir, self.label_dir = img_dir, lbl_dir
         self.image_files = list_images(img_dir)
@@ -679,40 +932,47 @@ class AnnotatorMainWindow(QMainWindow):
         # This ensures 6f.jpg comes before 1108f.jpg
         self.image_files.sort(key=natural_sort_key)
 
-        # If caller provided a preferred format (user explicitly selected), honor it
-        if prefer_format:
-            self.format = prefer_format
-            logging.info(f"Using preferred annotation format: {prefer_format}")
+        # If we created a new folder, create TXT files by default (no dialog)
+        if created_new_folder:
+            self.format = "TXT"
+            logging.info("New folder created. Using TXT format by default.")
+            # Create initial annotation files
+            self._create_initial_files()
         else:
-            # Auto-detect format from label files
-            detected_format = self._detect_format()
-            if detected_format:
-                self.format = detected_format
-                logging.info(f"Auto-detected annotation format: {detected_format}")
+            # If caller provided a preferred format (user explicitly selected), honor it
+            if prefer_format:
+                self.format = prefer_format
+                logging.info(f"Using preferred annotation format: {prefer_format}")
             else:
-                logging.warning("Could not auto-detect format. Prompting user.")
-                QMessageBox.warning(
-                    self, "No Labels Found",
-                    "No annotation files detected in the label folder.\n"
-                    "Please select a format manually."
-                )
-                self.select_format()
-                if not self.format:
-                    # If user cancels format selection after auto-detection fails,
-                    # we should clear the image files and reset state.
-                    self.image_dir = None
-                    self.label_dir = None
-                    self.image_files = []
-                    self.current_index = 0
-                    self.canvas.image = None
-                    self.canvas.boxes = []
-                    self.canvas.selected_boxes = set()
-                    self.canvas.update()
-                    self.update_labels_panel([])
-                    self.update_status_label()
-                    self._update_format_display()
-                    self.app_status_bar.set_status(get_status_message("no_format"))
-                    return
+                # Auto-detect format from label files
+                detected_format = self._detect_format()
+                if detected_format:
+                    self.format = detected_format
+                    logging.info(f"Auto-detected annotation format: {detected_format}")
+                else:
+                    logging.warning("Could not auto-detect format. Prompting user.")
+                    QMessageBox.warning(
+                        self, "No Labels Found",
+                        "No annotation files detected in the label folder.\n"
+                        "Please select a format manually."
+                    )
+                    self.select_format()
+                    if not self.format:
+                        # If user cancels format selection after auto-detection fails,
+                        # we should clear the image files and reset state.
+                        self.image_dir = None
+                        self.label_dir = None
+                        self.image_files = []
+                        self.current_index = 0
+                        self.canvas.image = None
+                        self.canvas.boxes = []
+                        self.canvas.selected_boxes = set()
+                        self.canvas.update()
+                        self.update_labels_panel([])
+                        self.update_status_label()
+                        self._update_format_display()
+                        self.app_status_bar.set_status(get_status_message("no_format"))
+                        return
 
         # Load first image and its labels automatically
         self.current_index = 0
@@ -1438,6 +1698,53 @@ class AnnotatorMainWindow(QMainWindow):
             pass
         return None
 
+    def _create_initial_files(self):
+        """Create initial annotation files based on selected format."""
+        try:
+            if self.format == "TXT":
+                # Create empty .txt files for each image
+                for img_file in self.image_files:
+                    base_name = os.path.splitext(img_file)[0]
+                    txt_file = os.path.join(self.label_dir, base_name + ".txt")
+                    if not os.path.exists(txt_file):
+                        with open(txt_file, 'w') as f:
+                            f.write("")  # Create empty file
+                logging.info(f"Created {len(self.image_files)} empty TXT files")
+                QMessageBox.information(self, "✓ Files Created", 
+                    f"Created {len(self.image_files)} TXT files in:\n{self.label_dir}\n\nYou can now start annotating!")
+            
+            elif self.format == "JSON":
+                # Create empty .json files for each image
+                for img_file in self.image_files:
+                    base_name = os.path.splitext(img_file)[0]
+                    json_file = os.path.join(self.label_dir, base_name + ".json")
+                    if not os.path.exists(json_file):
+                        with open(json_file, 'w') as f:
+                            json.dump({"annotations": []}, f)
+                logging.info(f"Created {len(self.image_files)} empty JSON files")
+                QMessageBox.information(self, "✓ Files Created", 
+                    f"Created {len(self.image_files)} JSON files in:\n{self.label_dir}\n\nYou can now start annotating!")
+            
+            elif self.format == "COCO":
+                # Create single COCO file
+                coco_file = os.path.join(self.label_dir, "_annotations.coco.json")
+                coco_data = {
+                    "info": {"description": "Dataset", "version": "1.0", "year": 2024},
+                    "licenses": [],
+                    "images": [],
+                    "annotations": [],
+                    "categories": []
+                }
+                with open(coco_file, 'w') as f:
+                    json.dump(coco_data, f, indent=2)
+                logging.info(f"Created COCO annotation file: {coco_file}")
+                QMessageBox.information(self, "✓ File Created", 
+                    f"Created COCO file:\n{coco_file}\n\nYou can now start annotating!")
+        
+        except Exception as e:
+            logging.error(f"Error creating initial files: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to create files:\n{str(e)}")
+
     def select_format(self):
         """Prompt the user to choose the annotation format (TXT/JSON/COCO)."""
         fmt_box = QMessageBox(self)
@@ -1469,14 +1776,14 @@ class AnnotatorMainWindow(QMainWindow):
         elif clicked == coco_btn:
             new_format = "COCO"
 
-        if new_format and new_format != self.format:
+        if new_format:
             self.format = new_format
-            self.update_status_label()
             self._update_format_display()
+            logging.info(f"Format changed to {self.format}. Now loading dataset...")
+            self.reload_data_for_new_format()
             self.app_status_bar.set_format(self.format)
             self.app_status_bar.set_status(get_status_message("format_selected"))
-            # Trigger reload for the new format
-            self.reload_data_for_new_format()
+
 
     def _update_format_display(self):
         """Updates the format display label in the control panel."""
@@ -2605,9 +2912,9 @@ class AnnotatorMainWindow(QMainWindow):
             return
         img_name = self.image_files[self.current_index]
         boxes = self.canvas.boxes
-        os.makedirs(self.label_dir, exist_ok=True)
 
         if self.format == "TXT":
+            os.makedirs(self.label_dir, exist_ok=True)
             # Save TXT format - convert from pixel coords to normalized
             label_file = os.path.join(self.label_dir, os.path.splitext(img_name)[0] + ".txt")
             img_h, img_w = self.canvas.image.shape[:2]
@@ -2622,15 +2929,112 @@ class AnnotatorMainWindow(QMainWindow):
                     bh = h / img_h
                     f.write(f"{int(class_id)} {xc:.6f} {yc:.6f} {bw:.6f} {bh:.6f}\n")
         elif self.format == "JSON":
+            os.makedirs(self.label_dir, exist_ok=True)
             save_json(self.label_dir, img_name, boxes, "")
-        else:
-            save_coco(self.label_dir, img_name, boxes, self.class_manager.get_classes())
+        elif self.format == "COCO":
+            # Save COCO format to the specific COCO file path
+            if self.coco_file_path:
+                self._save_coco_annotation(img_name, boxes)
+            else:
+                QMessageBox.warning(self, "Error", "COCO file path not set. Cannot save.")
+                logging.error("COCO file path not set. Cannot save annotation.")
+                return
 
         self.canvas.changed = False
         self.app_status_bar.set_status(get_status_message("image_saved"))
         logging.info(f"Saved annotations for '{img_name}' ({len(boxes)} boxes) format={self.format}")
         if not auto:
             QMessageBox.information(self, "Saved", f"Saved {img_name}")
+
+    def _save_coco_annotation(self, img_name, boxes):
+        """Save annotations to COCO file at self.coco_file_path."""
+        try:
+            # Read existing COCO file
+            if os.path.exists(self.coco_file_path):
+                with open(self.coco_file_path, 'r') as f:
+                    coco = json.load(f)
+            else:
+                # Create new COCO structure
+                coco = {
+                    "info": {"description": "COCO dataset created by Universal Annotator"},
+                    "licenses": [],
+                    "images": [],
+                    "annotations": [],
+                    "categories": []
+                }
+            
+            # Find image_id for current image
+            image_id = None
+            for img in coco.get("images", []):
+                if img["file_name"] == img_name:
+                    image_id = img["id"]
+                    break
+            
+            if image_id is None:
+                logging.warning(f"Image '{img_name}' not found in COCO file. Cannot save.")
+                return
+            
+            # Remove existing annotations for this image
+            coco["annotations"] = [ann for ann in coco.get("annotations", []) if ann.get("image_id") != image_id]
+            
+            # Build category map
+            classes = self.class_manager.get_classes()
+            name_to_cid = {}
+            for cat in coco.get("categories", []):
+                if isinstance(cat, dict):
+                    nm = cat.get("name") or cat.get("label")
+                    cid = cat.get("id")
+                    if nm is not None and cid is not None:
+                        name_to_cid[str(nm).strip()] = cid
+            
+            # Add new annotations
+            max_ann_id = max([ann.get("id", 0) for ann in coco.get("annotations", [])], default=0)
+            
+            for i, box in enumerate(boxes, start=1):
+                x, y, w, h, class_id = box
+                
+                # Map class_id to category_id
+                cid_to_write = None
+                try:
+                    if isinstance(class_id, int) and 0 <= class_id < len(classes):
+                        cname = classes[class_id]
+                        if cname in name_to_cid:
+                            cid_to_write = name_to_cid[cname]
+                        else:
+                            # Try normalized matching
+                            norm = ''.join(ch for ch in cname.lower() if ch.isalnum() or ch.isspace()).strip()
+                            for nm, cid in name_to_cid.items():
+                                nm_norm = ''.join(ch for ch in nm.lower() if ch.isalnum() or ch.isspace()).strip()
+                                if nm_norm == norm:
+                                    cid_to_write = cid
+                                    break
+                except Exception:
+                    cid_to_write = None
+                
+                if cid_to_write is None:
+                    try:
+                        cid_to_write = int(class_id)
+                    except Exception:
+                        cid_to_write = 0
+                
+                coco["annotations"].append({
+                    "id": max_ann_id + i,
+                    "image_id": image_id,
+                    "category_id": int(cid_to_write),
+                    "bbox": [x, y, w, h],
+                    "area": w * h,
+                    "iscrowd": 0
+                })
+            
+            # Write back to file
+            with open(self.coco_file_path, 'w') as f:
+                json.dump(coco, f, indent=2)
+            
+            logging.info(f"Saved {len(boxes)} annotations to {self.coco_file_path}")
+        
+        except Exception as e:
+            logging.error(f"Error saving COCO annotation: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to save COCO annotation:\n{str(e)}")
 
     # ----------------------------------------------------------------
     def convert_annotations_to_json(self):

@@ -20,6 +20,8 @@ A professional, modern, and powerful image annotation tool designed for creating
 - **Format Auto-Detection**: Automatically detects the annotation format from existing label files in the selected directory.
 - **JSON Class Discovery**: Intelligently scans your JSON files to discover class names, prompting you to confirm and apply them automatically.
 
+- **Create Label Files**: When loading a dataset with an empty label folder, the app automatically offers to create label files in your chosen format (TXT, JSON, or COCO).
+
 ### UI Features 
 - **Professional Dark Theme**: A beautiful dark theme for user comfort.
 - **Mouse Wheel Zoom**: Zoom in and out of images effortlessly using the mouse wheel.
