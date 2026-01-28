@@ -7,6 +7,8 @@ A professional, modern, and powerful image annotation tool designed for creating
 
 ![Universal Annotator UI](assets/icons/image.png)
 
+![Universal Annotator UI](assets/icons/image_with_Dataset.png)
+
 ## Key Features
 
 ### Core Features
