@@ -13,7 +13,10 @@ A professional, modern, and powerful image annotation tool designed for creating
 - **Multiple Export Formats**: Save annotations in **TXT**, **JSON**, and **COCO** formats.
    - Converters and exporters now use dedicated output folders by default (for example: `converted_txt/`, `converted_json/`, `converted_coco_json/`) to avoid overwriting root label files.
 - **Dual Annotation Modes**:
-    - **Edit Mode**: For creating, and modifying annotations.
+    - **Annotation Mode (Object Detection)**: Standard bounding box annotation.
+    - **Segmentation Mode (Polygon)**: Create precise polygon annotations for semantic segmentation tasks.
+- **Dual View Modes**:
+    - **Edit Mode**: For creating and modifying annotations.
     - **View Mode**: A read-only mode for safe reviewing.
 - **Advanced Editing**: Interactively move and resize any bounding box using intuitive drag handles.
 - **Nested Annotations**: Create bounding boxes inside existing ones, perfect for annotating objects within objects.
@@ -63,29 +66,28 @@ python app.py
    - By default, the app looks for label files in the selected label folder that match the image filenames. The Default format is TXT.
    - you can change the format later if needed.
 
-2. **Annotate Images**
+2. **Annotate Images (Object Detection)**
    - Press **E** to enter **Edit Mode**.
-   - Press **M** to enter **Drawing Mode**. The status bar will confirm you can now draw.
+   - Make sure "Annotation" mode is selected in the left panel.
    - Click and drag on the image to draw a bounding box.
    - Select the appropriate class from the dialog that appears.
    - Use **A/D** or the **Previous/Next** buttons to navigate between images.
 
-3. **Annotate Images**
-   - Switch to Edit Mode
-   - Click and drag to draw bounding boxes
-   - Select class when prompted
-   - Use A/D or Previous/Next to navigate
-   - Click and drag on the image to draw a new bounding box.
-   - Select a class for the new box from the dialog that appears.
-   - To remove a box, select it in the right-hand panel and click the "Delete Selected" button or press the `Delete` key.
+3. **Annotate Images (Segmentation)**
+   - Select **"Segmentation"** mode in the left panel.
+   - **Left-Click** on the canvas to add point vertices.
+   - **Right-Click** or press **Enter** to close the polygon.
+   - Press **Esc** to cancel drawing.
+   - Select the class from the dialog.
+   - Note: Polygons are saved as "contours" in JSON format or >5 values in TXT format.
 
-3. **Edit Annotations**
+4. **Edit Annotations**
    - In **Edit Mode** (but not Drawing Mode), click on a box to select it.
    - Drag the handles to resize it or drag the box itself to move it.
    - To create a box inside another, press **M** and draw within the parent box.
    - Press **Delete** to remove any selected boxes.
 
-4. **Save Your Work**
+5. **Save Your Work**
    - Press **S** to save manually.
    - Enable the **"Auto Save"** checkbox to save automatically every time you switch images.
    - The status bar will confirm when annotations are saved.
@@ -93,23 +95,36 @@ python app.py
 ### Supported Annotation Formats
 
 #### TXT Format (.txt files)
+**Object Detection (YOLO):**
 ```
 <class_id> <x_center> <y_center> <width> <height>
 0 0.5 0.5 0.3 0.4
-1 0.2 0.7 0.2 0.3
 ```
-Note: TXT files use normalized center-based coordinates (xc, yc, w, h) in the 0..1 range. The app's TXT loader converts these to pixel coordinates when displaying on the canvas.
+**Segmentation (YOLO-Seg):**
+```
+<class_id> <x1> <y1> <x2> <y2> <x3> <y3> ...
+0 0.1 0.1 0.2 0.3 0.4 0.5 ...
+```
+Note: TXT files use normalized coordinates (0..1 range).
 
 #### JSON Format
 ```json
 {
   "annotations": [
-    {"bbox": [x, y, w, h], "category_id": 0},
-    {"bbox": [x, y, w, h], "category_id": 1}
+    {
+      "label": "class_name", 
+      "bbox": [x, y, w, h], 
+      "classId": 0
+    },
+    {
+      "label": "class_name",
+      "contour": [[x1, y1], [x2, y2], ...],
+      "classId": 1
+    }
   ]
 }
 ``` 
-Note: The JSON loader is highly flexible. It automatically detects and parses various structures, including `objects` or `annotations` arrays, and can even extract class names from keys like `className`, `label`, or `category`. It also auto-detects and converts normalized coordinates to pixel values.
+Note: The JSON loader is highly flexible. It automatically detects and parses various structures, including `objects` or `annotations` arrays. It handles both `bbox` (boxes) and `contour` (polygons).
 
 #### COCO Format
 Standard COCO dataset format with images and annotations arrays.
@@ -117,25 +132,17 @@ Standard COCO dataset format with images and annotations arrays.
 ## Configuration
 
 ### Classes
-Edit `sample_classes/classes.txt` to define annotation classes:
-```
-person
-car
-bicycle
-dog
-cat
-```
-### keyboard Shortcuts
+Edit `sample_classes/classes.txt` (or create your own) to define annotation classes.
+
+### Keyboard Shortcuts
 Press D for Next
 A for Previous
 S for Save 
 E for Edit Mode
 V for View Mode
-M for makeing bboxes in Edit Mode
-X for Exiting From making Bboxes and Edit the Previous Bboxes
-
-###
-
+M for Drawing Mode
+X for Exiting Drawing Mode
+Delete for Deleting Selection
 
 ### Default Settings
 Edit `utils/config.py` for:
@@ -212,13 +219,10 @@ See `requirements.txt` for complete list:
 ## Known Limitations
 
 - **No Label Editing**: The class label of an existing bounding box cannot be changed. To change a label, you must delete the box and recreate it.
-- Single object per box (no segmentation)
-- Rectangular boxes only (no rotated or polygonal annotations)
 
 ## Future Enhancements
 
 - **In-place Label Editing**: Ability to change the class of an existing bounding box without deleting it.
-- Polygon and segmentation support
 - Keyboard shortcut customization
 - Additional export formats
 - Batch annotation tools

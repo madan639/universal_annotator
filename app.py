@@ -1,4 +1,4 @@
- = "Annotation Tool"
+title = "Annotation Tool"
 import sys
 import logging
 from PyQt5.QtWidgets import QApplication

@@ -162,6 +162,34 @@
 
 ---
 
+## Feature 7: Segmentation & Polygons
+
+**What it is:**
+- A new mode for creating precise polygon annotations instead of simple rectangular boxes.
+- Useful for segmentation tasks or irregularly shaped objects.
+
+**How to start:**
+1. Look for the **Mode Panel** (below the file operations buttons).
+2. Select **"Segmentation"** radio button.
+3. Select **"Polygon"** drawing tool.
+
+**How to draw:**
+1. **Left Click** on the image to place the first point.
+2. Continue **Left Clicking** to add more vertices to your shape.
+3. To finish, **Right Click** or press **Enter**.
+4. The polygon closes automatically (last point connects to first).
+5. A class selection dialog appears - choose your class.
+
+**How to cancel:**
+- Press **Esc** while drawing to cancel the current polygon.
+
+**Managing Polygons:**
+- Polygons appear in the **Annotations** list just like boxes, marked with `[Poly]`.
+- Click a polygon in the list to select it (it will highlight on the canvas).
+- Press **Delete** to remove the selected polygon.
+
+---
+
 ## Quick Start
 
 1. **Load Dataset**
