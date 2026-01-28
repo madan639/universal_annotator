@@ -1,5 +1,6 @@
 ## Warning 
-use main branch for accessing the tool as dev branch is not completed 
+⚠️ Note: Use the main branch to access the tool. The dev branch is under active development and testing and may be unstable.
+
 # Universal Annotator
 
 A professional, modern, and powerful image annotation tool designed for creating bounding box annotations with maximum efficiency. It supports multiple formats, features an intelligent and rich user interface, and is packed with advanced features like nested annotations and extensive keyboard shortcuts.
