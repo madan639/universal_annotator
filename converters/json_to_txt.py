@@ -10,7 +10,8 @@ def load_class_map(base_path):
     candidates = [
         os.path.join(base_path, "classes.txt"),
         os.path.join(os.path.dirname(base_path), "classes.txt"),
-        os.path.join(os.getcwd(), "sample_classes", "classes.txt")
+        # Removed: os.path.join(os.getcwd(), "sample_classes", "classes.txt")
+        # This fallback prevented auto-discovery from working
     ]
 
     for c in candidates:
@@ -19,7 +20,7 @@ def load_class_map(base_path):
                 names = [x.strip() for x in f.readlines() if x.strip()]
             return {name: i for i, name in enumerate(names)}
 
-    return {}  # fallback (will cause class skip)
+    return {}  # fallback (will cause class skip or trigger auto-discovery)
 
 
 def write_txt(path, lines):
@@ -155,15 +156,19 @@ def convert_json_to_txt(input_path, output_dir=None, image_dir=None, class_map=N
                     logging.warning("Failed to write classes.txt; proceeding with discovered ordering in-memory")
                     class_map = {name: i for i, name in enumerate(discovered_unique)}
             else:
+                # Auto-create in non-interactive mode
                 try:
                     with open(classes_path, 'w') as cf:
                         for n in discovered_unique:
                             cf.write(n + '\n')
                     logging.info(f"Auto-created classes.txt with {len(discovered_unique)} classes at {classes_path}")
-                    class_map = {name: i for i, name in enumerate(discovered_unique)}
-                except Exception:
-                    logging.warning("Failed to write auto-generated classes.txt; proceeding with discovered ordering in-memory")
-                    class_map = {name: i for i, name in enumerate(discovered_unique)}
+                except Exception as e:
+                    logging.warning(f"Failed to write auto-generated classes.txt: {e}; proceeding with discovered ordering in-memory")
+                
+                # Always set class_map, even if file write failed
+                class_map = {name: i for i, name in enumerate(discovered_unique)}
+                logging.info(f"Class map after discovery: {class_map}")
+
 
     # --------------------------
     # Folder mode
@@ -182,6 +187,7 @@ def convert_json_to_txt(input_path, output_dir=None, image_dir=None, class_map=N
     # --------------------------
     # Single JSON file mode
     # --------------------------
+    logging.debug(f"Calling convert_single_json with class_map: {class_map}")
     convert_single_json(input_path, output_dir, image_dir, class_map)
 
 
@@ -257,32 +263,49 @@ def convert_cctv(data, json_path, output_dir, image_dir, class_map):
     # -----------------------------
     out_lines = []
 
+    # Instantiate helper
+    try:
+        from core.json_helper import JSONHelper
+        helper = JSONHelper()
+    except ImportError:
+        # Fallback if run standalone without path setup (shouldn't happen in app)
+        logging.error("Could not import JSONHelper. Conversion might be limited.")
+        helper = None
+
     for obj in data.get("objects", []):
-
-        # ---- Extract box via contour.points ----
-        if "contour" in obj and "points" in obj["contour"]:
-            pts = obj["contour"]["points"]
-            if len(pts) < 2:
-                continue
-
-            x1, y1 = pts[0].get("x"), pts[0].get("y")
-            x2, y2 = pts[1].get("x"), pts[1].get("y")
-
-            if None in (x1, y1, x2, y2):
-                continue
-
-            x = min(x1, x2)
-            y = min(y1, y2)
-            w = abs(x2 - x1)
-            h = abs(y2 - y1)
-
+        
+        # Robust extraction
+        if helper:
+            bbox = helper.extract_bbox(obj)
+            cname = helper.get_name_from_object(obj, None) # Use default keys
         else:
+            # Legacy fallback
+            bbox = None
+            if "contour" in obj and "points" in obj["contour"]:
+                pts = obj["contour"]["points"]
+                if len(pts) >= 2:
+                    xs = [p.get("x") for p in pts]
+                    ys = [p.get("y") for p in pts]
+                    x1, x2 = min(xs), max(xs)
+                    y1, y2 = min(ys), max(ys)
+                    bbox = (x1, y1, x2-x1, y2-y1)
+            cname = obj.get("className")
+
+        if not bbox:
             continue
 
-        # ---- Resolve className → txt id (robust matching) ----
-        cname = obj.get("className")
+        x, y, w, h = bbox
+
         if not cname:
-            logging.warning(f"⚠ Missing className for object in {json_path}")
+            # Try mapping ID if available (COCO logic)
+            cid = obj.get("id") or obj.get("category_id") or obj.get("classId")
+            if cid is not None and getattr(class_map, 'get', None):
+                 # This assumes class_map might be a COCO map, but here class_map is Name->ID
+                 # So we can't easily reverse it without the map.
+                 # But wait, if we have a coco_map passed in, we could use it.
+                 # For now, just log warning.
+                 pass
+            logging.warning(f"⚠ Missing class name for object in {json_path}")
             continue
 
         cls_id = None
@@ -290,13 +313,14 @@ def convert_cctv(data, json_path, output_dir, image_dir, class_map):
         if cname in class_map:
             cls_id = class_map[cname]
         else:
-            # try case-insensitive match against keys
-            lname = cname.lower()
+            # try normalized match
+            norm_cname = helper.normalize_label(cname) if helper else cname.lower().strip()
             for k, v in class_map.items():
-                if k and k.lower() == lname:
+                norm_k = helper.normalize_label(k) if helper else k.lower().strip()
+                if norm_k == norm_cname:
                     cls_id = v
                     break
-
+        
         if cls_id is None:
             logging.warning(f"⚠ Unknown className '{cname}' in {json_path}")
             continue

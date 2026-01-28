@@ -158,5 +158,5 @@ class ControlPanel(QWidget):
         # Auto-save checkbox
         self.auto_save_cb = None  # Will be set by parent
         
-        layout.addStretch()
+        # layout.addStretch()
         self.setLayout(layout)

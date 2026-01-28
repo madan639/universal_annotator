@@ -4,12 +4,7 @@ import os
 class ClassManager:
     def __init__(self, path="sample_classes/classes.txt"):
         self.path = path
-        if not os.path.exists(path):
-            # create parent dir if necessary
-            parent = os.path.dirname(path)
-            if parent and not os.path.exists(parent):
-                os.makedirs(parent, exist_ok=True)
-            open(path, "w").write("object\n")
+        # Do not auto-create file here; let the app handle the prompt.
         self.load_classes()
 
     def load_classes(self):
@@ -55,3 +50,25 @@ class ClassManager:
 
     def set_classes(self, class_list):
         self.classes = class_list
+
+    def add_class(self, class_name):
+        """Add a new class to the list if it doesn't exist."""
+        if class_name and class_name not in self.classes:
+            self.classes.append(class_name)
+
+    def save_classes(self):
+        """Save current classes to the file path."""
+        if not self.path:
+            return
+        try:
+            # We default to saving as TXT as it's the primary format for this file
+            if self.path.lower().endswith('.json'):
+                import json
+                with open(self.path, 'w') as f:
+                    json.dump(self.classes, f, indent=2)
+            else:
+                with open(self.path, 'w') as f:
+                    for c in self.classes:
+                        f.write(f"{c}\n")
+        except Exception:
+            pass

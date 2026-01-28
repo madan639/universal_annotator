@@ -33,23 +33,51 @@ def convert_txt_to_json(input_dir, output_dir=None, img_size=None):
                 vals = line.strip().split()
                 if len(vals) < 5:
                     continue
+                
                 cls_id = int(vals[0])
-                xc, yc, bw, bh = map(float, vals[1:5])
-
-                # De-normalize if image size known
-                if img_size:
-                    img_h, img_w = img_size
-                    x = (xc - bw / 2) * img_w
-                    y = (yc - bh / 2) * img_h
-                    w = bw * img_w
-                    h = bh * img_h
-                else:
-                    x, y, w, h = xc, yc, bw, bh
-
-                boxes.append({
-                    "bbox": [x, y, w, h],
-                    "category_id": cls_id
-                })
+                coords = [float(v) for v in vals[1:]]
+                
+                # Check for Polygon (more than 4 coords)
+                if len(coords) > 4:
+                    # It's a polygon
+                    points = []
+                    for i in range(0, len(coords), 2):
+                       if i+1 >= len(coords): break
+                       px = coords[i]
+                       py = coords[i+1]
+                       
+                       # De-normalize
+                       if img_size:
+                           img_h, img_w = img_size
+                           px *= img_w
+                           py *= img_h
+                           
+                       points.append([px, py])
+                    
+                    boxes.append({
+                        "contour": points,
+                        "classId": cls_id,
+                        "label": f"class_{cls_id}"
+                    })
+                else: 
+                     # It's a BBox
+                    xc, yc, bw, bh = coords
+                    # De-normalize if image size known
+                    if img_size:
+                        img_h, img_w = img_size
+                        x = (xc - bw / 2) * img_w
+                        y = (yc - bh / 2) * img_h
+                        w = bw * img_w
+                        h = bh * img_h
+                    else:
+                        x, y, w, h = xc, yc, bw, bh
+    
+                    boxes.append({
+                        "bbox": [x, y, w, h],
+                        "classId": cls_id, 
+                        "category_id": cls_id, # Redundant but safe
+                        "label": f"class_{cls_id}"
+                    })
 
         json_data = {
             "image": image_name,

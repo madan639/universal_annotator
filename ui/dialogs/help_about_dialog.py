@@ -220,6 +220,12 @@ The tool provides several utilities to convert between annotation formats:
 - Make sure you are in **Drawing Mode** (press `M`). The status bar will confirm this.
 - Click and drag to create boxes. They must be larger than 5x5 pixels.
 
+### Polygon Drawing (Segmentation Mode)
+- **Left Click**: Add points to the polygon.
+- **Right Click** or **Enter**: Finish and close the polygon.
+- **Esc**: Cancel the current drawing.
+- **Select**: Click inside a polygon to select it.
+
         """)
         layout.addWidget(text)
         widget.setLayout(layout)

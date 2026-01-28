@@ -90,14 +90,16 @@ def convert_txt_to_coco(images_folder, txt_folder, output_path=None, class_names
                     continue
 
                 # Convert to absolute xywh
-                x = (xc - bw / 2) * w
-                y = (yc - bh / 2) * h
-                w_box = bw * w
-                h_box = bh * h
+                img_w = w  # Store original image dimensions
+                img_h = h
+                x = (xc - bw / 2) * img_w
+                y = (yc - bh / 2) * img_h
+                w_box = bw * img_w
+                h_box = bh * img_h
 
                 if x < 0 or y < 0 or w_box <= 0 or h_box <= 0:
                     continue
-                if x + w_box > w or y + h_box > h:
+                if x + w_box > img_w or y + h_box > img_h:
                     continue
 
                 annotations.append({

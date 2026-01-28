@@ -4,6 +4,7 @@ import logging
 from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
+from core.enums import DrawingTool
 
 
 class CanvasWidget(QWidget):
@@ -13,6 +14,7 @@ class CanvasWidget(QWidget):
     zoom_changed = pyqtSignal(float)  # Signal to emit zoom level
     drawing_cancelled = pyqtSignal() # Signal when drawing is cancelled by Esc
     box_added = pyqtSignal(tuple)  # Signal when new box is added
+    polygon_added = pyqtSignal(tuple) # Signal when new polygon is added
     
     def __init__(self, parent=None, mode="view", classes=None):
         super().__init__(parent)
@@ -21,12 +23,20 @@ class CanvasWidget(QWidget):
         self.image = None  # Original image (numpy array)
         self.display_image = None  # Displayed image (for canvas)
         self.boxes = []  # List of boxes: [(x, y, w, h, class_id), ...]
+        self.polygons = [] # List of polygons: [([(x,y), ...], class_id), ...]
         self.current_box = None  # Box being drawn
+        self.current_polygon = [] # List of points for current polygon
         self.start_pos = None
         self.current_class = 0
         self.changed = False
-        self.selected_boxes = set()  # Indices of selected boxes to display
+        self.selected_boxes = set()  # Indices of selected boxes
+        self.selected_polygons = set() # Indices of selected polygons
         self.scaled_pixmap = None  # Cache scaled pixmap
+        
+        # Tools
+        from core.enums import DrawingTool
+        self.current_tool = DrawingTool.RECTANGLE
+
         self.offset_x = 0
         self.offset_y = 0
         self.zoom_level = 1.0
@@ -40,8 +50,22 @@ class CanvasWidget(QWidget):
         self.parent_box_bounds = None  # (x, y, w, h)
         # --- Editing State ---
         self.editing_box_index = None
+        self.editing_poly_index = None
         self.editing_handle = None
         self.hovered_box_index = None
+        self.hovered_poly_index = None
+        self.hovered_poly_handle = None # (poly_idx, point_idx)
+
+    @property
+    def shapes(self):
+        """Unified property for saving/listing."""
+        # This is a read-only view for now, or we can make it return a mixed list
+        # For compatibility with legacy 'boxes' code, 'boxes' remains 'boxes'.
+        # This is strictly for the Exporter to grab everything.
+        return {
+            'boxes': self.boxes,
+            'polygons': self.polygons
+        }
         
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True) # Needed for hover effects and cursor changes
@@ -190,16 +214,50 @@ class CanvasWidget(QWidget):
             # A box was clicked for selection, so we don't proceed to drawing.
             return
         
-        # --- Priority 3: If no other action was taken, check if we can draw a new box ---
+        if self.current_tool == DrawingTool.POLYGON and self.is_drawing_enabled:
+             # Right click to close polygon
+             if event.button() == Qt.RightButton:
+                 if len(self.current_polygon) >= 3:
+                     logging.info(f"[POLYGON] Right-click closing polygon with {len(self.current_polygon)} points")
+                     new_poly = (list(self.current_polygon), self.current_class)
+                     self.polygons.append(new_poly)
+                     self.polygon_added.emit(new_poly) # Emit signal
+                     self.current_polygon = []
+                     self.changed = True
+                     self.update()
+                 return # Handle right click whether we closed or not (e.g. ignore if < 3 points)
+
+             logging.info(f"[POLYGON] Click at ({img_x}, {img_y})")
+             # Add point to current polygon
+             self.current_polygon.append((img_x, img_y))
+             self.update()
+             return
+
+        # --- Priority 3: Check for polygon selection ---
+        # Only if NOT drawing a new polygon
+        if not (self.current_tool == DrawingTool.POLYGON and self.is_drawing_enabled):
+            # Check polygons (Unified Index: len(boxes) + idx)
+            for i, (pts, _) in enumerate(self.polygons):
+                 contour = np.array(pts, dtype=np.int32)
+                 # Measure distance, if >= 0 it's inside or on edge
+                 dist = cv2.pointPolygonTest(contour, (img_x, img_y), False)
+                 if dist >= 0:
+                     u_idx = len(self.boxes) + i
+                     logging.info(f"[NESTED_DRAW] Polgyon Hit: idx={i} (unified={u_idx})")
+                     self.box_clicked_on_canvas.emit(u_idx)
+                     return
+
+        # --- Priority 4: If no other action was taken, check if we can draw a new box ---
         if not self.is_drawing_enabled:
             # If not in drawing mode, do not start drawing a new box.
             # This prevents accidental boxes when trying to click/drag the canvas.
             return
 
-        # --- If not editing, start drawing a new box ---
-        logging.debug(f"Mouse press at widget({pos.x()},{pos.y()}) -> image({img_x},{img_y})")
-        self.start_pos = (img_x, img_y)
-        self.editing_box_index = None # Ensure we are not in edit mode
+        if self.current_tool == DrawingTool.RECTANGLE:
+            # --- If not editing, start drawing a new box ---
+            logging.debug(f"Mouse press at widget({pos.x()},{pos.y()}) -> image({img_x},{img_y})")
+            self.start_pos = (img_x, img_y)
+            self.editing_box_index = None # Ensure we are not in edit mode
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for box preview or editing."""
@@ -314,7 +372,26 @@ class CanvasWidget(QWidget):
                 self.start_pos = None
                 self.drawing_cancelled.emit()
                 self.update()
-                return  # Event handled, do not propagate.
+                return  # Event handled
+            
+            # Cancel polygon drawing
+            if self.current_polygon:
+                self.current_polygon = []
+                self.update()
+                return
+
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Close polygon
+            if self.current_tool == DrawingTool.POLYGON and len(self.current_polygon) >= 3:
+                logging.info(f"Closing polygon with {len(self.current_polygon)} points")
+                # Add to polygons: (points_list, class_id)
+                new_poly = (list(self.current_polygon), self.current_class)
+                self.polygons.append(new_poly)
+                self.polygon_added.emit(new_poly) # Emit signal
+                self.current_polygon = []
+                self.changed = True
+                self.update()
+                return
         
         # For all other keys, or for Esc when not drawing, propagate to parent.
         super().keyPressEvent(event)
@@ -463,10 +540,82 @@ class CanvasWidget(QWidget):
             rh = int(h * self.scale_y)
             painter.drawRect(rx, ry, rw, rh)
 
+        # Draw Polygons
+        from PyQt5.QtGui import QPolygonF
+        from PyQt5.QtCore import QPointF
+        
+        # Existing Polygons
+        for idx, (pts, class_id) in enumerate(self.polygons):
+             # Unified index check
+             u_idx = len(self.boxes) + idx
+             is_selected = u_idx in self.selected_boxes
+
+             # Color
+             color_hex = palette[class_id % len(palette)] if class_id is not None else palette[0]
+             color = QColor(color_hex)
+             pen = QPen(color)
+             # Thicker pen if selected
+             pen.setWidth(4 if is_selected else 2)
+             if is_selected:
+                 # Add dashed line for selection
+                 pen.setStyle(Qt.DotLine)
+             else:
+                 pen.setStyle(Qt.SolidLine)
+             
+             painter.setPen(pen)
+             
+             # Fill
+             fill_color = QColor(color_hex)
+             fill_color.setAlpha(120 if is_selected else 60) # Darker fill if selected
+             painter.setBrush(fill_color)
+             
+             # Convert to widget coords
+             qpoints = []
+             for (px, py) in pts:
+                 wx = int(px * self.scale_x) + self.offset_x
+                 wy = int(py * self.scale_y) + self.offset_y
+                 qpoints.append(QPointF(wx, wy))
+             
+             qpoly = QPolygonF(qpoints)
+             painter.drawPolygon(qpoly)
+
+             # Draw vertices if selected
+             if is_selected:
+                 painter.setBrush(Qt.white)
+                 painter.setPen(Qt.black)
+                 for qp in qpoints:
+                     painter.drawEllipse(qp, 4, 4)
+
+        # Draw Current Polygon (in progress)
+        if self.current_polygon:
+            pen = QPen(Qt.green)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            
+            qpoints = []
+            for (px, py) in self.current_polygon:
+                 wx = int(px * self.scale_x) + self.offset_x
+                 wy = int(py * self.scale_y) + self.offset_y
+                 qpoints.append(QPointF(wx, wy))
+            
+            # Draw lines between points
+            if len(qpoints) > 0:
+                painter.drawPolyline(QPolygonF(qpoints))
+                # Draw closing line to cursor? (Requires mouseMove update, skipping for now to keep lines low)
+                
+                # Draw points as handles
+                painter.setBrush(Qt.red)
+                for qp in qpoints:
+                    painter.drawEllipse(qp, 3, 3)
+
     def delete_last_box(self):
-        """Delete the last box."""
-        if self.boxes:
+        """Delete the last box or polygon."""
+        if self.current_tool == DrawingTool.RECTANGLE and self.boxes:
             self.boxes.pop()
+            self.changed = True
+            self.update()
+        elif self.current_tool == DrawingTool.POLYGON and self.polygons:
+            self.polygons.pop()
             self.changed = True
             self.update()
 
