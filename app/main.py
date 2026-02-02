@@ -5,19 +5,30 @@ import logging
 from utils.logger import LoggingConfig
 from core.app_window import AnnotatorMainWindow
 from ui.themes import ThemeManager
+import platform
 
+def configure_qt_platform():
+    system = platform.system().lower()
+    logging.debug(f"Configuring Qt platform for {system}.")
 
-def main():
+    os.environ.pop("QT_QPA_PLATFORM", None)
     os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
 
-    # Force X11 backend (xcb) to avoid Wayland-specific warnings like 'requestActivate()'.
-    os.environ['QT_QPA_PLATFORM'] = 'xcb'
+    if system == "linux":
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    elif system == "windows":
+        os.environ["QT_QPA_PLATFORM"] = "windows"
+
+    
+def main():
+        # Setup logging ONCE
+    log_config = LoggingConfig()
+    log_config.setup_logging()
+
+    configure_qt_platform()
 
     app = QApplication(sys.argv)
     
-    # Setup logging
-    log_config = LoggingConfig()
-    log_config.setup_logging()
     
     # Apply dark theme to entire application
     theme_manager = ThemeManager()
