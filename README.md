@@ -86,7 +86,6 @@ python app.py
 4. **Edit Annotations**
    - In **Edit Mode** (but not Drawing Mode), click on a box to select it.
    - Drag the handles to resize it or drag the box itself to move it.
-   - To create a box inside another, press **M** and draw within the parent box.
    - Press **Delete** to remove any selected boxes.
 
 5. **Save Your Work**
@@ -145,6 +144,7 @@ V for View Mode
 M for Drawing Mode
 X for Exiting Drawing Mode
 Delete for Deleting Selection
+ESC for Closing Application
 
 ### Default Settings
 Edit `utils/config.py` for:

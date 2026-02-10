@@ -78,7 +78,9 @@
 | **A** | Go to previous image |
 | **D** | Go to next image |
 | **S** | Save current annotation |
-| **DELETE** | Delete last drawn box (Edit Mode only) |
+| **E** | Switch to Edit Mode |
+| **V** | Switch to View Mode |
+| **DELETE** | Delete selected box/polygon |
 
 ### In Dialog Boxes
 

@@ -200,7 +200,7 @@ class CanvasWidget(QWidget):
             if self.is_drawing_enabled:
                 self.parent_box_index = best_idx
                 self.parent_box_bounds = best_bounds
-                logging.info(f"[NESTED_DRAW] ✓ STARTING NESTED DRAW - parent_box_index={best_idx}, parent_box_bounds={best_bounds}")
+                logging.info(f"[NESTED_DRAW] STARTING NESTED DRAW - parent_box_index={best_idx}, parent_box_bounds={best_bounds}")
                 self.start_pos = (img_x, img_y)
                 self.editing_box_index = None
                 # Ensure the parent box is visible in this canvas instance
@@ -394,6 +394,7 @@ class CanvasWidget(QWidget):
                 return
         
         # For all other keys, or for Esc when not drawing, propagate to parent.
+        event.ignore() 
         super().keyPressEvent(event)
 
     def paintEvent(self, event):
@@ -548,7 +549,9 @@ class CanvasWidget(QWidget):
         for idx, (pts, class_id) in enumerate(self.polygons):
              # Unified index check
              u_idx = len(self.boxes) + idx
-             is_selected = u_idx in self.selected_boxes
+             if u_idx not in self.selected_boxes:
+                 continue
+             is_selected = True # optimization since we continue otherwise
 
              # Color
              color_hex = palette[class_id % len(palette)] if class_id is not None else palette[0]

@@ -35,7 +35,7 @@ def convert_coco_to_txt(coco_json_path, output_txt_folder=None, classes_txt_path
         for name in class_names:
             f.write(name + "\n")
 
-    print(f"✅ Saved classes.txt → {classes_txt_path}")
+    print(f" Saved classes.txt → {classes_txt_path}")
 
     # Build lookup for images
     images_info = {img["id"]: img for img in coco_data["images"]}
@@ -84,6 +84,6 @@ def convert_coco_to_txt(coco_json_path, output_txt_folder=None, classes_txt_path
             with open(txt_path, "w") as f:
                 f.write("\n".join(lines))
 
-    print(f"\n✅ Conversion complete!")
+    print(f"\n Conversion complete!")
     print(f"Annotations saved in: {output_txt_folder}")
     print(f"Classes saved in: {classes_txt_path}")

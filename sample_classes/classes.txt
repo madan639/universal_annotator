@@ -3,3 +3,7 @@ helmet
 savety vest
 no helmet
 no savety vest
+NO-Hardhat
+Safety Vest
+Hardhat
+Person

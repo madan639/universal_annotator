@@ -21,7 +21,7 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
     if class_names is None:
         class_names = []
 
-    print(f"\n🚀 Converting JSON folder → COCO: {json_folder}")
+    print(f"\n Converting JSON folder → COCO: {json_folder}")
 
     # Get JSON files from the specified folder
     json_files = sorted([f for f in os.listdir(json_folder) if f.endswith(".json") and not f.startswith("_")])
@@ -42,7 +42,7 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
             with open(json_path, "r") as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"⚠️ Skipping {json_file}: {str(e)}")
+            print(f" Skipping {json_file}: {str(e)}")
             continue
 
         # Handle both list and dict formats
@@ -58,7 +58,7 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
                         with Image.open(img_path) as im:
                             w, h = im.size
                     except Exception as e:
-                        print(f"⚠️ Skipping {img_name}: cannot open ({e})")
+                        print(f" Skipping {img_name}: cannot open ({e})")
                         continue
 
                     # Add image entry
@@ -102,7 +102,7 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
                 with Image.open(img_path) as im:
                     w, h = im.size
             except Exception as e:
-                print(f"⚠️ Skipping {img_name}: cannot open ({e})")
+                print(f" Skipping {img_name}: cannot open ({e})")
                 continue
 
             # Add image entry

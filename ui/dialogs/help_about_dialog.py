@@ -217,7 +217,6 @@ The tool provides several utilities to convert between annotation formats:
 
 ### Box drawing issues
 - Make sure you are in **Edit Mode** (press `E`).
-- Make sure you are in **Drawing Mode** (press `M`). The status bar will confirm this.
 - Click and drag to create boxes. They must be larger than 5x5 pixels.
 
 ### Polygon Drawing (Segmentation Mode)

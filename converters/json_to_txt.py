@@ -86,7 +86,7 @@ def convert_json_to_txt(input_path, output_dir=None, image_dir=None, class_map=N
         discovered_unique = list(dict.fromkeys(discovered))  # preserve order
 
         if not discovered_unique:
-            logging.warning("⚠ No className values discovered in JSON files; class_map remains empty and objects may be skipped.")
+            logging.warning("No className values discovered in JSON files; class_map remains empty and objects may be skipped.")
         else:
             # Prepare classes.txt path next to input (folder) or in same dir as file
             save_dir = input_path if os.path.isdir(input_path) else os.path.dirname(input_path)
@@ -198,26 +198,26 @@ def convert_single_json(json_path, output_dir, image_dir, class_map):
         with open(json_path) as f:
             data = json.load(f)
     except:
-        logging.error(f"❌ Cannot parse {json_path}")
+        logging.error(f" Cannot parse {json_path}")
         return
 
     # CASE 1: JSON is a list → pick first element
     if isinstance(data, list):
-        if len(data) == 0 or not isinstance(data[0], dict):
-            logging.error(f"❌ JSON list invalid: {json_path}")
+        if not isinstance(data, list) or len(data) == 0:
+            logging.error(f"JSON list invalid: {json_path}")
             return
         data = data[0]  # <-- FIXED HERE
 
     # Now data MUST be a dict
     if not isinstance(data, dict):
-        logging.warning(f"⚠ Unknown JSON shape in {json_path}")
+        logging.warning(f"Unknown JSON shape in {json_path}")
         return
 
     # Detect CCTV format
     if "objects" in data and ("frameName" in data or "image" in data):
         convert_cctv(data, json_path, output_dir, image_dir, class_map)
     else:
-        logging.warning(f"⚠ Unknown JSON format: {json_path}")
+        logging.warning(f"Unknown JSON format: {json_path}")
 
 
 def convert_cctv(data, json_path, output_dir, image_dir, class_map):
@@ -255,7 +255,7 @@ def convert_cctv(data, json_path, output_dir, image_dir, class_map):
                 height, width = img.shape[:2]
 
     if not width or not height:
-        logging.error(f"❌ Missing width/height in {json_path}")
+        logging.error(f"Missing width/height in {json_path}")
         return
 
     # -----------------------------
@@ -305,7 +305,7 @@ def convert_cctv(data, json_path, output_dir, image_dir, class_map):
                  # But wait, if we have a coco_map passed in, we could use it.
                  # For now, just log warning.
                  pass
-            logging.warning(f"⚠ Missing class name for object in {json_path}")
+            logging.warning(f"Missing class name for object in {json_path}")
             continue
 
         cls_id = None
@@ -322,7 +322,7 @@ def convert_cctv(data, json_path, output_dir, image_dir, class_map):
                     break
         
         if cls_id is None:
-            logging.warning(f"⚠ Unknown className '{cname}' in {json_path}")
+            logging.warning(f"Unknown className '{cname}' in {json_path}")
             continue
 
         # Normalize

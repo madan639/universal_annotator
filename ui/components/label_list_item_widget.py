@@ -58,3 +58,7 @@ class LabelListItemWidget(QWidget):
         layout.addWidget(self.delete_button)
 
         self.setLayout(layout)
+
+    def toggle_selection(self):
+        """Toggle the checkbox state."""
+        self.checkbox.setChecked(not self.checkbox.isChecked())

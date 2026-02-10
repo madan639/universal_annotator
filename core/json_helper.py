@@ -20,7 +20,8 @@ class JSONHelper:
     
     def __init__(self):
         """Initialize the JSON helper."""
-        self.json_name_keys = ['className', 'category_name', 'name', 'label']
+        # Include both camelCase and snake_case variants
+        self.json_name_keys = ['className', 'class_name', 'category_name', 'name', 'label', 'class']
         self.json_bbox_methods = ['contour', 'bbox', 'points', 'xywh']
     
     def detect_json_bbox_style(self, folder_path: str, sample_limit: int = 20) -> Tuple[List[str], Optional[Dict[int, str]]]:
@@ -315,6 +316,7 @@ class JSONHelper:
         Supports:
         - contour.points (CCTV style)
         - bbox [x, y, w, h] (COCO/standard)
+        - bbox {x_min, y_min, x_max, y_max} (min/max style)
         - points list
         
         Returns:
@@ -334,11 +336,28 @@ class JSONHelper:
                     y1, y2 = min(ys), max(ys)
                     return (x1, y1, abs(x2 - x1), abs(y2 - y1))
         
-        # 2. Standard bbox [x, y, w, h]
+        # 2. Standard bbox [x, y, w, h] (COCO format)
         if "bbox" in obj and isinstance(obj["bbox"], list) and len(obj["bbox"]) == 4:
             return tuple(obj["bbox"])
+        
+        # 3. bbox dict with x_min/y_min/x_max/y_max keys
+        if "bbox" in obj and isinstance(obj["bbox"], dict):
+            bbox = obj["bbox"]
+            if all(k in bbox for k in ('x_min', 'y_min', 'x_max', 'y_max')):
+                x_min = bbox['x_min']
+                y_min = bbox['y_min']
+                x_max = bbox['x_max']
+                y_max = bbox['y_max']
+                return (x_min, y_min, abs(x_max - x_min), abs(y_max - y_min))
+            # Also check for xmin/ymin/xmax/ymax (no underscore)
+            if all(k in bbox for k in ('xmin', 'ymin', 'xmax', 'ymax')):
+                x_min = bbox['xmin']
+                y_min = bbox['ymin']
+                x_max = bbox['xmax']
+                y_max = bbox['ymax']
+                return (x_min, y_min, abs(x_max - x_min), abs(y_max - y_min))
             
-        # 3. Points list directly in object
+        # 4. Points list directly in object
         if "points" in obj and isinstance(obj["points"], list) and len(obj["points"]) >= 2:
             pts = obj["points"]
             # Handle list of dicts or list of lists
@@ -356,7 +375,7 @@ class JSONHelper:
                 y1, y2 = min(ys), max(ys)
                 return (x1, y1, abs(x2 - x1), abs(y2 - y1))
                 
-        # 4. xywh keys
+        # 5. xywh keys directly in object
         if all(k in obj for k in ('x', 'y', 'width', 'height')):
              return (obj['x'], obj['y'], obj['width'], obj['height'])
 

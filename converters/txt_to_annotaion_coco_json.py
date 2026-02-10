@@ -24,7 +24,7 @@ def convert_txt_to_coco(images_folder, txt_folder, output_path=None, class_names
     if not class_names:
         class_names = []
 
-    print(f"\n🚀 Converting TXT → COCO: {txt_folder}")
+    print(f"\n Converting TXT → COCO: {txt_folder}")
 
     # Get image files
     image_files = sorted([f for f in os.listdir(images_folder)
@@ -45,17 +45,26 @@ def convert_txt_to_coco(images_folder, txt_folder, output_path=None, class_names
         img_path = os.path.join(images_folder, img_name)
         label_path = os.path.join(txt_folder, os.path.splitext(img_name)[0] + ".txt")
 
-        # Missing label → skip
+        # Missing label → assume background image (no annotations)
         if not os.path.exists(label_path):
-            skipped_count += 1
-            continue
+             # Just ensures lines is empty later
+             lines = []
+        else:
+             # Read labels
+             try:
+                 with open(label_path) as f:
+                     lines = [l.strip() for l in f.readlines() if l.strip()]
+             except Exception as e:
+                 print(f"Skipping {img_name}: cannot read labels ({e})")
+                 skipped_count += 1
+                 continue
 
         # Load image
         try:
             with Image.open(img_path) as im:
                 w, h = im.size
         except Exception as e:
-            print(f"⚠️ Skipping {img_name}: cannot read image ({e})")
+            print(f" Skipping {img_name}: cannot read image ({e})")
             skipped_count += 1
             continue
 
@@ -64,13 +73,14 @@ def convert_txt_to_coco(images_folder, txt_folder, output_path=None, class_names
             with open(label_path) as f:
                 lines = [l.strip() for l in f.readlines() if l.strip()]
         except Exception as e:
-            print(f"⚠️ Skipping {img_name}: cannot read labels ({e})")
+            print(f" Skipping {img_name}: cannot read labels ({e})")
             skipped_count += 1
             continue
 
         if not lines:
-            skipped_count += 1
-            continue
+            # Empty file means no annotations (background image). 
+            # Proceed to add image to list, but no annotations.
+            pass
 
         valid_boxes = 0
 
@@ -113,12 +123,12 @@ def convert_txt_to_coco(images_folder, txt_folder, output_path=None, class_names
                 ann_id += 1
                 valid_boxes += 1
             except Exception as e:
-                print(f"⚠️ Skipping annotation in {img_name}: {str(e)}")
+                print(f"Skipping annotation in {img_name}: {str(e)}")
                 continue
 
-        if valid_boxes == 0:
-            skipped_count += 1
-            continue
+        # REMOVED: if valid_boxes == 0 check. 
+        # COCO standard allows images with 0 annotations (background images).
+        # We still increment skipped_count only if there was a read error, not for empty annotations.
 
         images.append({
             "id": image_id,

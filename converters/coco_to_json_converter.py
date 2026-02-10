@@ -19,7 +19,7 @@ def convert_coco_to_json_folder(coco_json_path, output_json_folder=None, class_t
     if class_txt_path is None:
         class_txt_path = os.path.join(output_json_folder, "classes.txt")
     
-    print(f"\n🚀 Converting COCO → JSON folder: {coco_json_path}")
+    print(f"\n Converting COCO → JSON folder: {coco_json_path}")
 
     # Load COCO JSON
     with open(coco_json_path, "r") as f:
@@ -38,7 +38,7 @@ def convert_coco_to_json_folder(coco_json_path, output_json_folder=None, class_t
     with open(class_txt_path, "w") as f:
         for name in class_names:
             f.write(name + "\n")
-    print(f"✅ Saved classes.txt → {class_txt_path}")
+    print(f"Saved classes.txt → {class_txt_path}")
 
     # Build lookup for images
     images_info = {img["id"]: img for img in coco_data["images"]}
@@ -88,7 +88,7 @@ def convert_coco_to_json_folder(coco_json_path, output_json_folder=None, class_t
         with open(json_output_path, "w") as f:
             json.dump(image_json, f, indent=2)
 
-    print(f"\n✅ Conversion complete!")
+    print(f"\n Conversion complete!")
     print(f"Per-image JSONs saved in: {output_json_folder}")
     print(f"Classes saved in: {class_txt_path}")
 

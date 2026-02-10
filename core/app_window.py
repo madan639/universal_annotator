@@ -73,6 +73,7 @@ class AnnotatorMainWindow(QMainWindow):
         # --- State ---
         self.mode = "view"
         self.format = "TXT"  # Default format
+        self.annotation_mode = "annotation"  # "annotation" for boxes, "segmentation" for polygons
         self.class_manager = ClassManager(os.path.join(os.getcwd(), "sample_classes", "classes.txt"))
         
         # JSON-specific state
@@ -198,6 +199,7 @@ class AnnotatorMainWindow(QMainWindow):
         self.load_classes_btn.clicked.connect(self.load_classes_file)
         self.labels_list.itemChanged.connect(self.on_label_toggled)
         self.labels_list.itemClicked.connect(self.on_label_clicked)
+        self._connect_signals()
 
         # Check classes on startup
         QTimer.singleShot(0, self.check_classes_file)
@@ -217,6 +219,8 @@ class AnnotatorMainWindow(QMainWindow):
              # Update list visuals
              self._update_selection_state()
 
+    def _connect_signals(self):
+        """Connect remaining signals"""
         self.select_all_btn.clicked.connect(self.select_all_labels)
         self.delete_selected_btn.clicked.connect(self.delete_selected_boxes)
         self.deselect_all_btn.clicked.connect(self.deselect_all_labels)
@@ -365,10 +369,15 @@ class AnnotatorMainWindow(QMainWindow):
         """Handle switch between Detection and Segmentation."""
         logging.info(f"App Mode changed to: {mode}")
         if mode == AppMode.SEGMENTATION:
+             self.annotation_mode = "segmentation"
              status = "Segmentation Mode: Draw Polygons"
         else:
+             self.annotation_mode = "annotation"
              status = "Detection Mode: Draw Boxes or Polygons"
         self.app_status_bar.set_status(status)
+        # Reload current image with new mode filter
+        if self.image_files:
+            self.load_image()
 
     def _on_drawing_tool_changed(self, tool):
         """Update canvas tool."""
@@ -1018,9 +1027,12 @@ class AnnotatorMainWindow(QMainWindow):
         self._update_format_display()
 
         # Handle JSON class discovery
+        logging.info(f"[LOAD_DATASET] Format detected: '{self.format}'. Checking for class discovery...")
         if self.format == 'JSON':
+            logging.info("[LOAD_DATASET] Format is JSON, calling _handle_json_class_discovery...")
             self._handle_json_class_discovery()
         else:
+            logging.info(f"[LOAD_DATASET] Format is {self.format}, showing class management dialog...")
             self._show_class_management_dialog()
         
         self._populate_image_jump_box()
@@ -1049,9 +1061,13 @@ class AnnotatorMainWindow(QMainWindow):
     
     def _handle_json_class_discovery(self):
         """Handle JSON class discovery with progress dialog."""
+        logging.info("[JSON_CLASS_DISCOVERY] Starting class discovery...")
+        discovered = {}
+        
         try:
             # Count JSON files
             files = [fn for fn in os.listdir(self.label_dir) if fn.endswith('.json')] if os.path.isdir(self.label_dir) else []
+            logging.info(f"[JSON_CLASS_DISCOVERY] Found {len(files)} JSON files in {self.label_dir}")
             sample_count = min(len(files), 20)
             est_secs = max(0.2, sample_count * 0.02)
             
@@ -1066,7 +1082,9 @@ class AnnotatorMainWindow(QMainWindow):
             # Detect JSON structure
             try:
                 self.json_name_keys = self._detect_json_name_keys(self.label_dir)
-            except Exception:
+                logging.info(f"[JSON_CLASS_DISCOVERY] Detected name keys: {self.json_name_keys}")
+            except Exception as e:
+                logging.warning(f"[JSON_CLASS_DISCOVERY] Failed to detect name keys: {e}")
                 self.json_name_keys = ['className', 'category_name', 'name', 'label']
 
             try:
@@ -1076,6 +1094,7 @@ class AnnotatorMainWindow(QMainWindow):
 
             # Discover classes
             discovered = self._discover_classes_in_json_folder(self.label_dir)
+            logging.info(f"[JSON_CLASS_DISCOVERY] Discovery returned {len(discovered)} classes: {list(discovered.keys())[:20]}")
             
             # Close progress dialog
             try:
@@ -1083,45 +1102,23 @@ class AnnotatorMainWindow(QMainWindow):
             except Exception:
                 pass
 
-            if discovered:
-                # Logic: If discovered items are NOT in current classes, we likely want to use them.
-                current_classes = set(self.class_manager.classes)
-                discovered_names = set(discovered.keys())
-                
-                # If we found relevant classes that we don't know about
-                if not discovered_names.issubset(current_classes):
-                     # Auto-merge or Prompt? 
-                     # Given the user's frustration ("robust"), let's AUTO-ADD distinct names if they look valid.
-                     # But respecting the dialog logic.
-                     self._prompt_use_discovered_json_classes(discovered)
-                else:
-                    logging.info("Discovered classes are already known. Skipping prompt.")
-            else:
-                 logging.debug("No classes discovered in JSONs.")
-
         except Exception as e:
-            logging.error(f"Error in JSON class discovery: {e}")
+            logging.error(f"[JSON_CLASS_DISCOVERY] Error during discovery: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 if 'pd' in locals(): pd.close()
             except: pass
-            # Fallback to direct discovery
-            try:
-                self.json_name_keys = self._detect_json_name_keys(self.label_dir)
-            except Exception:
-                self.json_name_keys = ['className', 'category_name', 'name', 'label']
-            try:
-                self.json_bbox_methods = self._detect_json_bbox_style(self.label_dir)
-            except Exception:
-                self.json_bbox_methods = ['contour', 'bbox', 'points', 'xywh']
-            discovered = self._discover_classes_in_json_folder(self.label_dir)
 
-        # Prompt user to confirm discovered classes
+        # ALWAYS show the class discovery dialog for JSON format
         if discovered:
-            if not self._prompt_use_discovered_json_classes(discovered):
-                self._show_class_management_dialog()
-            else:
+            logging.info(f"[JSON_CLASS_DISCOVERY] Showing dialog for {len(discovered)} classes...")
+            result = self._prompt_use_discovered_json_classes(discovered)
+            logging.info(f"[JSON_CLASS_DISCOVERY] Dialog result: {result}")
+            if result:
                 self.json_display_override = True
         else:
+            logging.warning("[JSON_CLASS_DISCOVERY] No classes discovered, showing class management dialog instead")
             self._show_class_management_dialog()
 
     def _populate_image_jump_box(self):
@@ -1129,8 +1126,10 @@ class AnnotatorMainWindow(QMainWindow):
         self.image_jump_box.blockSignals(True)
         self.image_jump_box.clear()
         items = [f"{i+1}: {os.path.basename(name)}" for i, name in enumerate(self.image_files)]
+        logging.info(f"[IMAGE_JUMP] Populating with {len(items)} images")
         self.image_jump_box.addItems(items)
         self.image_jump_box.blockSignals(False)
+        self.image_jump_box.update()  # Force UI update
 
     def _show_class_management_dialog(self):
         """Shows a dialog to display current classes and allow manual entry."""
@@ -1158,44 +1157,59 @@ class AnnotatorMainWindow(QMainWindow):
                 logging.info("User proceeded with existing classes.")
 
     def _discover_classes_in_json_folder(self, folder_path):
-        name_keys = self.json_name_keys if self.json_name_keys else ['className', 'category_name', 'name', 'label']
+        # ONLY use keys that are likely to contain CLASS names, not file names
+        # Priority order: className first, then category_name, then label
+        class_name_keys = ['className', 'category_name', 'label', 'class_name', 'class']
+        
         if not os.path.isdir(folder_path):
             return {}
         
         discovered = {}
         
+        def looks_like_filename(s):
+            """Check if string looks like a filename."""
+            if not s:
+                return True
+            s_lower = s.lower()
+            # Check for file extensions
+            file_exts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp', '.json', '.txt', '.xml']
+            for ext in file_exts:
+                if s_lower.endswith(ext):
+                    return True
+            # Check for patterns like "images123"
+            if s_lower.startswith('image') and any(c.isdigit() for c in s):
+                return True
+            return False
+        
         def add_count(name):
             if name and isinstance(name, str):
                 normalized = name.strip()
-                if normalized and not self._looks_like_id(normalized):
-                    discovered[normalized] = discovered.get(normalized, 0) + 1
+                # Skip if it looks like an ID, filename, or is too short/long
+                if normalized and not self._looks_like_id(normalized) and not looks_like_filename(normalized):
+                    if len(normalized) >= 2 and len(normalized) <= 50:
+                        discovered[normalized] = discovered.get(normalized, 0) + 1
         
-        def extract_name(obj):
+        def extract_class_name(obj):
+            """Extract class name from object, prioritizing className field."""
             if not isinstance(obj, dict):
                 return None
-            for key in name_keys:
-                if '.' in key:
-                    parts = key.split('.')
-                    val = obj
-                    for part in parts:
-                        if isinstance(val, dict) and part in val:
-                            val = val[part]
-                        else:
-                            val = None
-                            break
-                    if val and isinstance(val, str):
-                        return val
-                elif key in obj:
+            # Check keys in priority order
+            for key in class_name_keys:
+                if key in obj:
                     val = obj[key]
-                    if isinstance(val, str):
-                        return val
+                    if isinstance(val, str) and val.strip():
+                        return val.strip()
             return None
         
         def inspect_obj(o):
             if isinstance(o, dict):
-                name = extract_name(o)
-                if name:
-                    add_count(name)
+                # Only extract from objects that look like annotations
+                # (have classId or className or type field)
+                if 'classId' in o or 'className' in o or 'category_id' in o or 'type' in o:
+                    name = extract_class_name(o)
+                    if name:
+                        add_count(name)
+                # Recurse into nested structures
                 for v in o.values():
                     inspect_obj(v)
             elif isinstance(o, list):
@@ -1211,6 +1225,8 @@ class AnnotatorMainWindow(QMainWindow):
             except Exception as e:
                 logging.debug(f"Error reading path {fname}: {e}")
                 continue
+        
+        logging.info(f"[CLASS_DISCOVERY] Found classes: {list(discovered.keys())}")
         return discovered
 
     def _detect_json_bbox_style(self, folder_path, sample_limit=20):
@@ -1348,72 +1364,55 @@ class AnnotatorMainWindow(QMainWindow):
         return False
 
     def _prompt_use_discovered_json_classes(self, discovered):
-        """Show a confirmation dialog listing discovered classes and allow user to rename/confirm them."""
-        # Clean current classes
-        current = self.class_manager.get_classes()
-        if len(current) == 1 and current[0].lower() == 'person' and len(discovered) > 0:
-             # Assume default 'person' is placeholder if we found real stuff
-             msg = f"Discovered {len(discovered)} classes in JSON files:\n{', '.join(list(discovered.keys())[:10])}..."
-             reply = QMessageBox.question(self, "Discovered Classes", 
-                                          f"{msg}\n\nReplace default 'person' class with these?", 
-                                          QMessageBox.Yes | QMessageBox.No)
-             if reply == QMessageBox.Yes:
-                 sorted_classes = sorted(discovered.keys())
-                 self.class_manager.set_classes(sorted_classes)
-                 self.update_labels_panel(self.class_manager.get_classes())
-                 return
-
-        msg = f"Found {len(discovered)} classes in JSON files. Do you want to add/merge them with existing classes?"
-        detailed = "\n".join([f"{k} ({v})" for k, v in discovered.items()])
-        
-        # Auto-update if current list is empty or matches default
-        if not current:
-             self.class_manager.set_classes(sorted(discovered.keys()))
-             self.update_labels_panel(self.class_manager.get_classes())
-             return
-
-        # Simple prompt for now
-        reply = QMessageBox.question(self, "Update Classes?", msg, QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-             # Merge
-             new_classes = sorted(list(set(current) | set(discovered.keys())))
-             self.class_manager.set_classes(new_classes)
-             self.update_labels_panel(new_classes)
-        else:
-             logging.info("User chose NOT to update classes from JSON discovery.")
+        """Show a dialog listing discovered classes and allow user to rename/confirm them."""
         if not discovered:
             return False
 
         # Create dialog with editable fields per discovered class
+        from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QScrollArea, QWidget
+        
         dlg = QDialog(self)
         dlg.setWindowTitle("Discovered Classes - Confirm / Edit")
-        from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel
+        dlg.setMinimumWidth(500)
+        dlg.setMinimumHeight(400)
 
-        vbox = QVBoxLayout(dlg)
-        info = QLabel("Detected the following classes in JSON files. You can edit any name before applying:")
-        vbox.addWidget(info)
-
-        form = QFormLayout()
+        main_layout = QVBoxLayout(dlg)
+        
+        # Info label
+        info = QLabel(f"Found {len(discovered)} classes in annotation files.\nYou can edit any name before applying.\nLeave blank to use the original name.")
+        main_layout.addWidget(info)
+        
+        # Scroll area for many classes
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        form = QFormLayout(scroll_widget)
+        
         edits = {}
-        for name in discovered:
+        for name in sorted(discovered.keys()):
             le = QLineEdit(name)
-            form.addRow(name, le)
+            form.addRow(f"{name}:", le)
             edits[name] = le
-
-        vbox.addLayout(form)
+        
+        scroll.setWidget(scroll_widget)
+        main_layout.addWidget(scroll)
+        
+        # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        vbox.addWidget(buttons)
+        buttons.button(QDialogButtonBox.Ok).setText("Apply Classes")
+        buttons.button(QDialogButtonBox.Cancel).setText("Skip (Use Current)")
+        main_layout.addWidget(buttons)
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
 
         if dlg.exec_() != QDialog.Accepted:
-            logging.info("User cancelled applying discovered JSON classes.")
+            logging.info("User chose NOT to update classes from JSON discovery.")
             return False
 
         # Collect edited names and ensure uniqueness
         edited = []
         seen = set()
-        for orig in discovered:
+        for orig in sorted(discovered.keys()):
             val = edits[orig].text().strip()
             if not val:
                 val = orig
@@ -1428,7 +1427,7 @@ class AnnotatorMainWindow(QMainWindow):
             seen.add(val)
             edited.append(val)
 
-        # Apply classes for display only (do not overwrite classes.txt unless user saves)
+        # Apply classes for display
         self.class_manager.classes = edited
         self.canvas.classes = edited
 
@@ -1555,7 +1554,7 @@ class AnnotatorMainWindow(QMainWindow):
                         with open(txt_file, 'w') as f:
                             f.write("")  # Create empty file
                 logging.info(f"Created {len(self.image_files)} empty TXT files")
-                QMessageBox.information(self, "✓ Files Created", 
+                QMessageBox.information(self, "Files Created", 
                     f"Created {len(self.image_files)} TXT files in:\n{self.label_dir}\n\nYou can now start annotating!")
             
             elif self.format == "JSON":
@@ -1567,7 +1566,7 @@ class AnnotatorMainWindow(QMainWindow):
                         with open(json_file, 'w') as f:
                             json.dump({"annotations": []}, f)
                 logging.info(f"Created {len(self.image_files)} empty JSON files")
-                QMessageBox.information(self, "✓ Files Created", 
+                QMessageBox.information(self, "Files Created", 
                     f"Created {len(self.image_files)} JSON files in:\n{self.label_dir}\n\nYou can now start annotating!")
             
             elif self.format == "COCO":
@@ -1583,7 +1582,7 @@ class AnnotatorMainWindow(QMainWindow):
                 with open(coco_file, 'w') as f:
                     json.dump(coco_data, f, indent=2)
                 logging.info(f"Created COCO annotation file: {coco_file}")
-                QMessageBox.information(self, "✓ File Created", 
+                QMessageBox.information(self, "File Created", 
                     f"Created COCO file:\n{coco_file}\n\nYou can now start annotating!")
         
         except Exception as e:
@@ -1639,9 +1638,11 @@ class AnnotatorMainWindow(QMainWindow):
     def set_edit_mode(self):
         self.mode = "edit"
         self.canvas.mode = "edit"
+        # Auto-enable drawing mode so user can immediately draw
+        self.canvas.set_drawing_mode(True)
         self.update_status_label()
         self.app_status_bar.set_mode("edit")
-        self.app_status_bar.set_status("Edit Mode Enabled. Press 'M' to enter Drawing Mode, then click and drag to create boxes. Press 'X' to exit Drawing Mode.")
+        self.app_status_bar.set_status("Edit Mode Enabled. Click and drag to draw boxes. Press 'X' to disable drawing.")
 
     def set_view_mode(self):
         self.mode = "view"
@@ -1915,7 +1916,7 @@ class AnnotatorMainWindow(QMainWindow):
         if self.format == "TXT":
             file = os.path.join(self.label_dir, os.path.splitext(img_name)[0] + ".txt")
             if os.path.exists(file):
-                boxes, polygons = load_txt_annotations(file, img_shape)
+                boxes, polygons = load_txt_annotations(file, img_shape, mode=self.annotation_mode)
 
         elif self.format == "JSON":
             file = os.path.join(self.label_dir, os.path.splitext(img_name)[0] + ".json")
@@ -1924,7 +1925,7 @@ class AnnotatorMainWindow(QMainWindow):
                  file = os.path.join(self.label_dir, "converted_json", os.path.splitext(img_name)[0] + ".json")
             
             if os.path.exists(file):
-                boxes, polygons = load_json_annotations(file, img_name, self.class_manager, img_shape)
+                boxes, polygons = load_json_annotations(file, img_name, self.class_manager, img_shape, mode=self.annotation_mode)
                 
         elif self.format == "COCO":
             file = os.path.join(self.label_dir, "_annotations.coco.json")
@@ -1933,7 +1934,7 @@ class AnnotatorMainWindow(QMainWindow):
                 # The loader currently returns class_id.
                 # AppWindow usually handles COCO alignment (loading names from file).
                 # But to save lines, we assume ClassManager is already aligned or we accept IDs.
-                boxes, polygons = load_coco_annotations(file, img_name, self.class_manager)
+                boxes, polygons = load_coco_annotations(file, img_name, self.class_manager, mode=self.annotation_mode)
 
         # now push them into the canvas
         self.canvas.boxes = boxes
@@ -2266,7 +2267,11 @@ class AnnotatorMainWindow(QMainWindow):
 
     # ----------------------------------------------------------------
     def save_annotation(self, auto=False):
-        if self.mode == "view" or not self.image_files or not self.format:
+        if self.mode == "view":
+             if not auto:
+                 QMessageBox.warning(self, "View Mode", "Cannot save modifications in View Mode.\nSwitch to Edit Mode first.")
+             return
+        if not self.image_files or not self.format:
             return
         img_name = self.image_files[self.current_index]
         boxes = self.canvas.boxes
@@ -2665,3 +2670,21 @@ class AnnotatorMainWindow(QMainWindow):
             logging.error(msg)
             QMessageBox.critical(self, "Conversion Error", msg)
             self.app_status_bar.set_status("Conversion failed.")
+
+    def keyPressEvent(self, event):
+        """Handle global key events."""
+        if event.key() == Qt.Key_Escape:
+             # Always treat Escape as Quit/Close request - use prompt!
+             self.close_prompt()
+             return
+        
+        # Explicitly handle V for View Mode and E for Edit Mode to ensure reliability
+        if event.key() == Qt.Key_V:
+            self.set_view_mode()
+            return
+        
+        if event.key() == Qt.Key_E:
+            self.set_edit_mode()
+            return
+            
+        super().keyPressEvent(event)

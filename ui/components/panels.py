@@ -114,9 +114,16 @@ class ControlPanel(QWidget):
         save_format_layout.addWidget(self.format_btn)
         layout.addLayout(save_format_layout)
         
+        # Image selector label
+        image_selector_label = QLabel("Jump to Image:")
+        image_selector_label.setStyleSheet("font-weight: bold; font-size: 11px; margin-top: 10px;")
+        layout.addWidget(image_selector_label)
+        
         # Image jump dropdown below the buttons
         self.image_jump_box = QComboBox()
         self.image_jump_box.setMinimumHeight(36)
+        self.image_jump_box.setMinimumWidth(150)
+        self.image_jump_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         layout.addWidget(self.image_jump_box)
         
         # Current format display
