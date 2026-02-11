@@ -5,7 +5,7 @@ import re
 from PyQt5.QtWidgets import ( 
     QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QFileDialog, QApplication,
     QMessageBox, QCheckBox, QSizePolicy, QListWidgetItem, QDialog, QLabel,
-    QTextEdit, QPushButton, QProgressDialog
+    QTextEdit, QPushButton, QProgressDialog, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QScrollArea, QWidget
 )
 from PyQt5.QtCore import Qt, QTimer
 from .canvas_widget import CanvasWidget
@@ -30,7 +30,8 @@ from exporters.json_exporter import save_json
 from exporters.coco_exporter import save_coco
 from utils.file_utils import list_images
 from core.loaders import load_txt_annotations, load_json_annotations, load_coco_annotations
-
+from PIL import Image
+import traceback
 
 
 def natural_sort_key(filename):
@@ -217,7 +218,22 @@ class AnnotatorMainWindow(QMainWindow):
              self.canvas.selected_boxes = self.selected_box_indices
              self.canvas.update()
              # Update list visuals
-             self._update_selection_state()
+             self._update_list_selection_visuals()
+
+    def _update_list_selection_visuals(self):
+        """Update checkboxes in the labels list to match selected_box_indices."""
+        self.labels_list.blockSignals(True)
+        for i in range(self.labels_list.count()):
+            item = self.labels_list.item(i)
+            box_idx = item.data(Qt.UserRole)
+            widget = self.labels_list.itemWidget(item)
+            
+            if widget and hasattr(widget, 'checkbox'):
+                should_be_checked = box_idx in self.selected_box_indices
+                widget.checkbox.blockSignals(True)
+                widget.checkbox.setChecked(should_be_checked)
+                widget.checkbox.blockSignals(False)
+        self.labels_list.blockSignals(False)
 
     def _connect_signals(self):
         """Connect remaining signals"""
@@ -242,6 +258,9 @@ class AnnotatorMainWindow(QMainWindow):
 
         # --- Add Tooltips ---
         self._setup_tooltips()
+        
+        # Initialize Shortcuts
+        self.init_shortcuts()
 
     def check_classes_file(self):
         """Check if classes file exists, if not prompt user."""
@@ -721,9 +740,11 @@ class AnnotatorMainWindow(QMainWindow):
             self.image_files = image_files
             self.current_index = 0
             self.selected_box_indices = set()
+            self.manual_deselect_all = False  # Reset for new format
             self.image_selections = {}
             
             self._create_initial_files()
+            self._populate_image_jump_box()  # Populate jump box for new dataset
             self.load_image()
             self.app_status_bar.set_status(f"Dataset loaded with {self.format} format.")
             logging.info(f"Dataset loaded with {self.format} format. Images: {len(image_files)}")
@@ -762,8 +783,15 @@ class AnnotatorMainWindow(QMainWindow):
             self.image_files = image_files
             self.current_index = 0
             self.selected_box_indices = set()
+            self.manual_deselect_all = False
             self.image_selections = {}
             
+            # Trigger class discovery for JSON format
+            if self.format == 'JSON':
+                logging.info("[RELOAD] JSON format detected, triggering class discovery...")
+                self._handle_json_class_discovery()
+            
+            self._populate_image_jump_box()
             self.load_image()
             self.app_status_bar.set_status(f"Dataset loaded with {self.format} format.")
             logging.info(f"Dataset loaded with {self.format} format. Images: {len(image_files)}")
@@ -827,7 +855,6 @@ class AnnotatorMainWindow(QMainWindow):
             for idx, img_file in enumerate(image_files):
                 img_path = os.path.join(img_dir, img_file)
                 try:
-                    from PIL import Image
                     img = Image.open(img_path)
                     width, height = img.size
                 except Exception:
@@ -861,9 +888,11 @@ class AnnotatorMainWindow(QMainWindow):
             self.image_files = image_files
             self.current_index = 0
             self.selected_box_indices = set()
+            self.manual_deselect_all = False
             self.image_selections = {}
             self.coco_file_path = coco_file_path
             
+            self._populate_image_jump_box()  # Populate jump box for new COCO dataset
             self.load_image()
             self.app_status_bar.set_status(f"Dataset loaded with COCO format.")
             logging.info(f"Dataset loaded with COCO format. Images: {len(image_files)}. COCO file: {coco_file_path}")
@@ -899,9 +928,11 @@ class AnnotatorMainWindow(QMainWindow):
             self.image_files = image_files
             self.current_index = 0
             self.selected_box_indices = set()
+            self.manual_deselect_all = False  # Reset for new format
             self.image_selections = {}
             self.coco_file_path = coco_path
             
+            self._populate_image_jump_box()  # Populate jump box for existing COCO dataset
             self.load_image()
             self.app_status_bar.set_status(f"Dataset loaded with COCO format.")
             logging.info(f"Dataset loaded with COCO format. Images: {len(image_files)}. COCO file: {coco_path}")
@@ -1023,7 +1054,8 @@ class AnnotatorMainWindow(QMainWindow):
 
         # Reset selections
         self.selected_box_indices = set()
-        self.annotation_manager.image_selections = {}
+        self.manual_deselect_all = False
+        self.image_selections = {}
         self._update_format_display()
 
         # Handle JSON class discovery
@@ -1104,7 +1136,6 @@ class AnnotatorMainWindow(QMainWindow):
 
         except Exception as e:
             logging.error(f"[JSON_CLASS_DISCOVERY] Error during discovery: {e}")
-            import traceback
             traceback.print_exc()
             try:
                 if 'pd' in locals(): pd.close()
@@ -1369,7 +1400,6 @@ class AnnotatorMainWindow(QMainWindow):
             return False
 
         # Create dialog with editable fields per discovered class
-        from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QScrollArea, QWidget
         
         dlg = QDialog(self)
         dlg.setWindowTitle("Discovered Classes - Confirm / Edit")
@@ -1684,37 +1714,78 @@ class AnnotatorMainWindow(QMainWindow):
                 "background-color: #2196F3; color: white; padding: 8px; font-weight: bold; border-radius: 4px;"
             )
 
-    # ----------------------------------------------------------------
-    def keyPressEvent(self, e):
-        key = e.key()
-        if key in (Qt.Key_Q, Qt.Key_Escape):
-            self.close_prompt()
-        elif key == Qt.Key_A:
-            logging.info(f"Key A pressed: navigating to previous image (format={self.format})")
-            self.prev_image()
-        elif key == Qt.Key_D:
-            logging.info(f"Key D pressed: navigating to next image (format={self.format})")
-            self.next_image()
-        elif key == Qt.Key_Delete and self.mode == "edit":
-            # Delete the currently selected boxes
+    
+    def init_shortcuts(self):
+        """Initialize application-wide shortcuts."""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+
+        # Navigation
+        self.shortcut_next = QShortcut(QKeySequence(Qt.Key_D), self)
+        self.shortcut_next.activated.connect(self.next_image_action)
+        
+        self.shortcut_prev = QShortcut(QKeySequence(Qt.Key_A), self)
+        self.shortcut_prev.activated.connect(self.prev_image_action)
+
+        # Actions
+        self.shortcut_save = QShortcut(QKeySequence(Qt.Key_S), self)
+        self.shortcut_save.activated.connect(self.save_action)
+        
+        self.shortcut_delete = QShortcut(QKeySequence(Qt.Key_Delete), self)
+        self.shortcut_delete.activated.connect(self.delete_action)
+        
+        self.shortcut_cancel = QShortcut(QKeySequence(Qt.Key_C), self)
+        self.shortcut_cancel.activated.connect(self.cancel_action)
+        
+        self.shortcut_view = QShortcut(QKeySequence(Qt.Key_X), self)
+        self.shortcut_view.activated.connect(self.view_mode_action)
+        
+        self.shortcut_quit = QShortcut(QKeySequence(Qt.Key_Q), self)
+        self.shortcut_quit.activated.connect(self.close_prompt_action)
+
+    # Wrapper actions for shortcuts
+    def next_image_action(self):
+        logging.info(f"[SHORTCUT] D key pressed: Next Image (image_files={len(self.image_files) if self.image_files else 0}, current_index={self.current_index})")
+        self.next_image()
+
+    def prev_image_action(self):
+        logging.info(f"[SHORTCUT] A key pressed: Prev Image (image_files={len(self.image_files) if self.image_files else 0}, current_index={self.current_index})")
+        self.prev_image()
+
+    def save_action(self):
+        logging.info("Shortcut S pressed: Save")
+        self.save_annotation()
+
+    def delete_action(self):
+        if self.mode == "edit":
             self.delete_selected_boxes()
-        elif key == Qt.Key_S:
-            self.save_annotation()
-        elif key == Qt.Key_M and self.mode == "edit":
-            # Toggle drawing mode on the canvas
-            is_drawing = self.canvas.toggle_drawing_mode()
-            if is_drawing:
-                self.app_status_bar.set_status("Drawing mode enabled. Click and drag to create boxes.")
-                self.app_status_bar.set_mode("drawing")
-            else:
-                self.app_status_bar.set_status("Drawing mode disabled. Back to edit mode.")
-                self.app_status_bar.set_mode("edit")
-        elif key == Qt.Key_X and self.mode == "edit":
-            # Explicitly disable drawing mode
-            if self.canvas.is_drawing_enabled:
-                self.canvas.set_drawing_mode(enabled=False)
-                self.app_status_bar.set_status("Drawing mode disabled. Back to edit mode.")
-                self.app_status_bar.set_mode("edit")
+
+    def view_mode_action(self):
+        logging.info("Shortcut X pressed: Switching to View Mode")
+        self.set_view_mode()
+
+    def cancel_action(self):
+        if self.mode == "edit":
+            logging.info("Shortcut C pressed: Cancel annotation")
+            if self.canvas.current_polygon:
+                self.canvas.current_polygon = []
+                self.canvas.update()
+                self.app_status_bar.set_status("Cancelled incomplete polygon.")
+            elif self.canvas.current_box:
+                self.canvas.current_box = None
+                self.canvas.start_pos = None
+                self.canvas.update()
+                self.app_status_bar.set_status("Cancelled incomplete box.")
+
+    def close_prompt_action(self):
+        self.close_prompt()
+
+    # ----------------------------------------------------------------
+    # keyPressEvent replaced by QShortcuts in init_shortcuts()
+    # Keeping minimal pass for unhandled keys if needed, or removing entirely.
+    def keyPressEvent(self, e):
+        # Fallback for keys not covered by shortcuts if any
+        super().keyPressEvent(e)
 
     def close_prompt(self):
         reply = QMessageBox.question(
@@ -1753,11 +1824,28 @@ class AnnotatorMainWindow(QMainWindow):
                     # Auto-select the newly added polygon
                     # Index is number of boxes + index of this polygon (which is last, so len - 1)
                     new_poly_idx = len(self.canvas.boxes) + len(self.canvas.polygons) - 1
-                    self.selected_box_indices = {new_poly_idx}
+                    self.selected_box_indices.add(new_poly_idx)
                     self.image_selections[self.current_index] = self.selected_box_indices.copy()
+                    
+                    # Trigger auto-save ONLY if auto-save checkbox is enabled
+                    if self.auto_save_cb.isChecked():
+                        self.canvas.changed = True
+                        self.canvas.update()
+                        self.update_labels_panel(self.canvas.boxes)
+                        self.save_annotation(auto=True)
+                    else:
+                        self.canvas.changed = True
+                        self.canvas.update()
+                        self.update_labels_panel(self.canvas.boxes)
+                    return
                     
             except Exception as e:
                 logging.error(f"Error selecting class for polygon: {e}")
+        else:
+            # User cancelled - remove the polygon that was just added
+            if self.canvas.polygons:
+                self.canvas.polygons.pop()
+                logging.info("Class selection cancelled. Removed unclassified polygon.")
         
         self.canvas.changed = True
         self.canvas.update()
@@ -1972,8 +2060,18 @@ class AnnotatorMainWindow(QMainWindow):
                     total_items = len(boxes) + len(polygons)
                     self.selected_box_indices = set(range(total_items))  # Default to all selected
                     logging.info(f"[LOAD_IMAGE] FIRST VISIT + manual_deselect_all=False: selected_box_indices={self.selected_box_indices} (range 0-{total_items-1})")
+                    
+                    if len(self.selected_box_indices) != total_items:
+                        logging.error(f"[LOAD_IMAGE] MISMATCH! range({total_items}) produced {len(self.selected_box_indices)} indices")
         else:
-            # Selections are already set - likely pre-set by code (shouldn't normally happen)
+            # Selections are already set - likely pre-set by code (or persisted incorrectly)
+            # Validate them against current item count
+            total_items = len(boxes) + len(polygons)
+            valid_selections = {idx for idx in self.selected_box_indices if idx < total_items}
+            
+            if len(valid_selections) != len(self.selected_box_indices):
+                logging.warning(f"[LOAD_IMAGE] Pruned {len(self.selected_box_indices) - len(valid_selections)} invalid indices. New count: {len(valid_selections)}")
+                self.selected_box_indices = valid_selections
             logging.info(f"[LOAD_IMAGE] Selections already set: {self.selected_box_indices}")
         
         # Always save final selections for this image
@@ -2206,6 +2304,31 @@ class AnnotatorMainWindow(QMainWindow):
     def next_image(self):
         if not self.image_files:
             return
+        # Check for incomplete polygon and prompt user
+        if self.canvas.current_polygon and len(self.canvas.current_polygon) >= 3:
+            reply = QMessageBox.question(
+                self, "Incomplete Polygon",
+                "You have an incomplete polygon. Do you want to complete and save it?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                # Complete the polygon and show class dialog
+                pts = list(self.canvas.current_polygon)
+                self.canvas.current_polygon = []
+                new_poly = (pts, 0)
+                self.canvas.polygons.append(new_poly)
+                self.on_polygon_added(new_poly)
+                return  # Don't navigate yet, let user finish class selection
+            elif reply == QMessageBox.Cancel:
+                return  # Don't navigate
+            else:  # No
+                self.canvas.current_polygon = []
+                logging.info("User chose not to save incomplete polygon.")
+        elif self.canvas.current_polygon:
+            # Less than 3 points, just clear
+            self.canvas.current_polygon = []
+            logging.info("Cleared incomplete polygon when navigating to next image.")
+        
         if self.canvas.changed:
             self.prompt_save_changes()
         
@@ -2230,6 +2353,31 @@ class AnnotatorMainWindow(QMainWindow):
     def prev_image(self):
         if not self.image_files:
             return
+        # Check for incomplete polygon and prompt user
+        if self.canvas.current_polygon and len(self.canvas.current_polygon) >= 3:
+            reply = QMessageBox.question(
+                self, "Incomplete Polygon",
+                "You have an incomplete polygon. Do you want to complete and save it?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+            if reply == QMessageBox.Yes:
+                # Complete the polygon and show class dialog
+                pts = list(self.canvas.current_polygon)
+                self.canvas.current_polygon = []
+                new_poly = (pts, 0)
+                self.canvas.polygons.append(new_poly)
+                self.on_polygon_added(new_poly)
+                return  # Don't navigate yet, let user finish class selection
+            elif reply == QMessageBox.Cancel:
+                return  # Don't navigate
+            else:  # No
+                self.canvas.current_polygon = []
+                logging.info("User chose not to save incomplete polygon.")
+        elif self.canvas.current_polygon:
+            # Less than 3 points, just clear
+            self.canvas.current_polygon = []
+            logging.info("Cleared incomplete polygon when navigating to previous image.")
+        
         if self.canvas.changed:
             self.prompt_save_changes()
         # Save current selections
@@ -2320,8 +2468,43 @@ class AnnotatorMainWindow(QMainWindow):
         self.canvas.changed = False
         self.app_status_bar.set_status(get_status_message("image_saved"))
         logging.info(f"Saved annotations for '{img_name}' ({len(boxes)} boxes, {len(polygons)} polygons) format={self.format}")
-        if not auto:
-            QMessageBox.information(self, "Saved", f"Saved {img_name}")
+        
+        # Show save confirmation popup ONLY if not already shown
+        # This prevents duplicate popups when navigating after manual save
+        if not hasattr(self, '_last_saved_image') or self._last_saved_image != self.current_index:
+            save_msg = f"Saved {img_name}\n\nBoxes: {len(boxes)}\nPolygons: {len(polygons)}"
+            self.show_temporary_message("Saved", save_msg, duration=1000)
+            self._last_saved_image = self.current_index
+
+    def show_temporary_message(self, title, message, duration=1000):
+        """Show a message box that auto-closes after 'duration' ms (default 1 sec) or when user clicks OK."""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.setDefaultButton(QMessageBox.Ok)
+        msg_box.setWindowFlags(Qt.WindowStaysOnTopHint)
+        
+        # Use non-blocking show
+        msg_box.show()
+        
+        # Center on parent
+        geom = msg_box.geometry()
+        p_geom = self.geometry()
+        x = p_geom.x() + (p_geom.width() - geom.width()) // 2
+        y = p_geom.y() + (p_geom.height() - geom.height()) // 2
+        msg_box.move(x, y)
+        
+        # Auto-close after duration (only if still visible)
+        def close_msg():
+            try:
+                if msg_box.isVisible():
+                    msg_box.close()
+                    msg_box.deleteLater()
+            except:
+                pass
+        
+        QTimer.singleShot(duration, close_msg)
 
     def _save_coco_annotation(self, img_name, boxes, polygons=None):
         """Save annotations to COCO file at self.coco_file_path."""
@@ -2426,7 +2609,9 @@ class AnnotatorMainWindow(QMainWindow):
         
         try:
             # Use default output folder (converted_json)
-            converted_files = convert_txt_to_json(self.label_dir, output_dir=None, img_size=None)
+            # Pass class names so converter writes proper names instead of class_0
+            class_names = self.class_manager.get_classes() if hasattr(self, 'class_manager') else None
+            converted_files = convert_txt_to_json(self.label_dir, output_dir=None, img_size=None, class_names=class_names)
             output_dir = os.path.join(self.label_dir, "converted_json")
             logging.info(f"Converted {len(converted_files)} TXT files to JSON in '{output_dir}'.")
             
@@ -2474,7 +2659,6 @@ class AnnotatorMainWindow(QMainWindow):
             n = len(discovered)
             dlg = QDialog(self)
             dlg.setWindowTitle("Map class names to numeric IDs")
-            from PyQt5.QtWidgets import QFormLayout, QLineEdit, QDialogButtonBox
 
             layout = QFormLayout(dlg)
             edits = {}

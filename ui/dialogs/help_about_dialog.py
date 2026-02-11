@@ -108,18 +108,18 @@ class HelpDialog(QDialog):
 |-----|--------|
 | `A` | Previous Image |
 | `D` | Next Image |
-| `←` `→` | Navigate between images |
 
-## Editing
+## Editing & Drawing
 | Key | Action |
 |-----|--------|
-| `E` | Toggle Edit Mode |
-| `V` | Toggle View Mode |
-| `M` | Enter/Exit Drawing Mode (in Edit Mode) |
-| `X` | Exit Drawing Mode (returns to selection) |
-| `Delete` | Remove selected bounding box(es) |
-| `S` | Save current image |
-| `Esc` | Cancel drawing a new box (while dragging) |
+| `E` | Switch to Edit Mode |
+| `X` | Switch to View Mode |
+| `M` | Toggle Drawing Mode (in Edit Mode) |
+| `C` | Cancel incomplete polygon/box |
+| `Delete` | Remove selected box(es) or polygon(s) |
+| `S` | Save current annotations |
+| `Esc` | Cancel drawing | Exit application |
+| `Enter` | Close polygon (in Segmentation) |
 
 ## Selection
 | Key | Action |
@@ -130,7 +130,7 @@ class HelpDialog(QDialog):
 ## General
 | Key | Action |
 |-----|--------|
-| `Esc` / `Q` | Exit Application |
+| `Q` / `Esc` | Exit Application |
 | `F1` | Open Help Dialog |
 | `F5` | Refresh Current Image |
 
@@ -174,11 +174,11 @@ The tool provides several utilities to convert between annotation formats:
 # Tips & Tricks
 
 ## Efficient Annotation
-1. **Use Keyboard Shortcuts**: `A` and `D` for navigation, `E` for Edit Mode, and `M` for Drawing Mode are essential for speed.
+1. **Use Keyboard Shortcuts**: `A` and `D` for navigation, `E` for Edit Mode.
 2. **Jump to Image**: Use the dropdown list below the "Save" button to jump directly to any image in your dataset.
 3. **Auto-Save**: Enable auto-save to avoid losing work when navigating between images.
 4. **Quick Deletion**: Use the trash bin icon next to any annotation in the right-hand panel to delete it instantly.
-5. **Cancel Drawing**: If you make a mistake while drawing a box, press `Esc` before releasing the mouse to cancel it.
+5. **Cancel Drawing**: If you make a mistake while drawing a box, press `C` before releasing the mouse to cancel it.
 6. **Smart Selection**: When boxes overlap, clicking on them automatically selects the smallest box under your cursor. This makes it easy to select and delete inner boxes.
 7. **Single Selection**: To quickly select just one box, click it directly on the image. All other boxes will be deselected.
 

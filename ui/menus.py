@@ -69,8 +69,8 @@ class AppMenuBar(QMenuBar):
         
         # Delete Selected Boxes
         delete_action = edit_menu.addAction("Delete Selected Boxes")
-        delete_action.setShortcut(QKeySequence.Delete)
-        delete_action.setStatusTip("Remove the selected bounding boxes")
+        # Shortcut handled via QShortcut in app_window.py
+        delete_action.setStatusTip("Remove the selected bounding boxes (Delete)")
         delete_action.triggered.connect(self.parent.delete_selected_boxes)
         
         edit_menu.addSeparator()
@@ -93,14 +93,14 @@ class AppMenuBar(QMenuBar):
         
         # Previous Image
         prev_action = view_menu.addAction("Previous Image")
-        prev_action.setShortcut("A")
-        prev_action.setStatusTip("Go to previous image")
+        # Shortcut handled via QShortcut in app_window.py
+        prev_action.setStatusTip("Go to previous image (A)")
         prev_action.triggered.connect(self.parent.prev_image)
         
         # Next Image
         next_action = view_menu.addAction("Next Image")
-        next_action.setShortcut("D")
-        next_action.setStatusTip("Go to next image")
+        # Shortcut handled via QShortcut in app_window.py
+        next_action.setStatusTip("Go to next image (D)")
         next_action.triggered.connect(self.parent.next_image)
         
         view_menu.addSeparator()

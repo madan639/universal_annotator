@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from typing import List, Tuple, Dict, Any, Optional
+import re
 
 # Try relative import if inside package, else absolute/sys.path
 try:
@@ -119,8 +120,15 @@ def load_json_annotations(file_path: str, img_name: str, class_manager, img_shap
                 class_id = 0
                 name = json_helper.get_name_from_object(obj)
                 
-                # If we have a proper class name, use it to register/find the class
-                if name and isinstance(name, str) and len(name) < 50:
+                # Check if the name is a generic placeholder like "class_0", "class_1"
+                
+                is_generic_name = False
+                if name and isinstance(name, str):
+                    if re.match(r'^class_\d+$', name, re.IGNORECASE):
+                        is_generic_name = True
+                
+                # If we have a proper (non-generic) class name, use it
+                if name and isinstance(name, str) and len(name) < 50 and not is_generic_name:
                     classes = class_manager.get_classes()
                     if name in classes:
                         class_id = classes.index(name)
@@ -130,7 +138,7 @@ def load_json_annotations(file_path: str, img_name: str, class_manager, img_shap
                         classes = class_manager.get_classes()
                         class_id = classes.index(name)
                 elif "classId" in obj:
-                    # Only use classId if no className available
+                    # Use classId - try to map to existing class names first
                     raw_id = int(obj["classId"])
                     classes = class_manager.get_classes()
                     if raw_id < len(classes):
@@ -219,11 +227,30 @@ def load_coco_annotations(file_path: str, img_name: str, class_manager, mode: st
     try:
         with open(file_path, "r") as f:
             coco = json.load(f)
+        
+        # Build category_id -> class_manager index mapping
+        cat_id_to_class_idx = {}
+        for cat in coco.get("categories", []):
+            cat_id = cat.get("id", 0)
+            cat_name = cat.get("name", f"Class_{cat_id}")
+            
+            # Register in class_manager if not already present
+            classes = class_manager.get_classes()
+            if cat_name in classes:
+                cat_id_to_class_idx[cat_id] = classes.index(cat_name)
+            else:
+                class_manager.add_class(cat_name)
+                classes = class_manager.get_classes()
+                cat_id_to_class_idx[cat_id] = classes.index(cat_name)
             
         img_id = None
+        img_w = None
+        img_h = None
         for img in coco.get("images", []):
             if img["file_name"] == img_name:
                 img_id = img["id"]
+                img_w = img.get("width")
+                img_h = img.get("height")
                 break
         
         if img_id is None:
@@ -231,23 +258,42 @@ def load_coco_annotations(file_path: str, img_name: str, class_manager, mode: st
             
         for ann in coco.get("annotations", []):
             if ann["image_id"] == img_id:
-                cid = ann.get("category_id", 0)
+                raw_cat_id = ann.get("category_id", 0)
+                # Map to class_manager index using our mapping
+                cid = cat_id_to_class_idx.get(raw_cat_id, raw_cat_id)
                 
-                # Polygon - only load if not in annotation mode
+                # Polygon/segmentation
                 if mode != "annotation" and "segmentation" in ann and ann["segmentation"]:
                     seg = ann["segmentation"]
                     if isinstance(seg, list) and seg:
                          poly_flat = seg[0]
-                         points = [(poly_flat[i], poly_flat[i+1]) for i in range(0, len(poly_flat), 2)]
-                         polygons.append((points, cid))
-                         continue
+                         if isinstance(poly_flat, list) and len(poly_flat) >= 6:
+                             # Check if coordinates are normalized (all values <= 1.0)
+                             if img_w and img_h and max(poly_flat) <= 1.0:
+                                 # Denormalize
+                                 denorm = []
+                                 for i in range(0, len(poly_flat), 2):
+                                     denorm.append(poly_flat[i] * img_w)
+                                     denorm.append(poly_flat[i+1] * img_h)
+                                 poly_flat = denorm
+                             
+                             points = [(poly_flat[i], poly_flat[i+1]) for i in range(0, len(poly_flat), 2)]
+                             polygons.append((points, cid))
+                             continue
                 
                 # BBox - only load if not in segmentation mode
                 if mode != "segmentation" and "bbox" in ann:
                     x, y, w, h = ann["bbox"]
+                    # Denormalize if needed
+                    if img_w and img_h and all(v <= 1.0 for v in [x, y, w, h]):
+                        x *= img_w
+                        y *= img_h
+                        w *= img_w
+                        h *= img_h
                     boxes.append((x, y, w, h, cid))
                     
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"Error loading COCO annotations: {e}")
         
     return boxes, polygons
+

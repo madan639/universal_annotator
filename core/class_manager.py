@@ -1,5 +1,5 @@
 import os
-
+import json
 
 class ClassManager:
     def __init__(self, path="sample_classes/classes.txt"):
@@ -15,7 +15,6 @@ class ClassManager:
 
         if self.path.lower().endswith('.json'):
             try:
-                import json
                 with open(self.path, 'r') as f:
                     data = json.load(f)
                 # If file is a list of names
@@ -63,7 +62,7 @@ class ClassManager:
         try:
             # We default to saving as TXT as it's the primary format for this file
             if self.path.lower().endswith('.json'):
-                import json
+
                 with open(self.path, 'w') as f:
                     json.dump(self.classes, f, indent=2)
             else:

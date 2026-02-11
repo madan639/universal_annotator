@@ -5,6 +5,9 @@ from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from core.enums import DrawingTool
+from PyQt5.QtGui import QPolygonF
+from PyQt5.QtCore import QPointF
+from core.enums import DrawingTool
 
 
 class CanvasWidget(QWidget):
@@ -34,7 +37,6 @@ class CanvasWidget(QWidget):
         self.scaled_pixmap = None  # Cache scaled pixmap
         
         # Tools
-        from core.enums import DrawingTool
         self.current_tool = DrawingTool.RECTANGLE
 
         self.offset_x = 0
@@ -542,8 +544,7 @@ class CanvasWidget(QWidget):
             painter.drawRect(rx, ry, rw, rh)
 
         # Draw Polygons
-        from PyQt5.QtGui import QPolygonF
-        from PyQt5.QtCore import QPointF
+
         
         # Existing Polygons
         for idx, (pts, class_id) in enumerate(self.polygons):
