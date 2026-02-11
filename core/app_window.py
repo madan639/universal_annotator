@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 from .canvas_widget import CanvasWidget
-from .class_manager import ClassManager
+from .class_manager import ClassManager, prompt_use_discovered_json_classes
 from .managers import ImageManager, AnnotationManager, FormatManager, AutoSaveManager
 from .json_helper import JSONHelper
 from ui.themes import ThemeManager 
@@ -1144,7 +1144,7 @@ class AnnotatorMainWindow(QMainWindow):
         # ALWAYS show the class discovery dialog for JSON format
         if discovered:
             logging.info(f"[JSON_CLASS_DISCOVERY] Showing dialog for {len(discovered)} classes...")
-            result = self._prompt_use_discovered_json_classes(discovered)
+            result = prompt_use_discovered_json_classes(self, discovered)
             logging.info(f"[JSON_CLASS_DISCOVERY] Dialog result: {result}")
             if result:
                 self.json_display_override = True
@@ -1394,146 +1394,7 @@ class AnnotatorMainWindow(QMainWindow):
             return True
         return False
 
-    def _prompt_use_discovered_json_classes(self, discovered):
-        """Show a dialog listing discovered classes and allow user to rename/confirm them."""
-        # If no discovered classes, we'll still show the dialog so user can add some
-        if discovered is None:
-            discovered = {}
 
-        # Create dialog with editable fields per discovered class
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Discovered Classes - Confirm / Edit")
-        dlg.setMinimumWidth(500)
-        dlg.setMinimumHeight(400)
-
-        main_layout = QVBoxLayout(dlg)
-        
-        # Info label
-        msg = f"Found {len(discovered)} classes in annotation files." if discovered else "No classes found in annotation files."
-        info = QLabel(f"{msg}\nYou can rename discovered classes or add missing ones manually.")
-        main_layout.addWidget(info)
-        
-        # Scroll area for many classes
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        form = QFormLayout(scroll_widget)
-        
-        edits = []
-        def add_class_row(name=""):
-            row_idx = len(edits)
-            le = QLineEdit(name)
-            le.setPlaceholderText("Enter class name...")
-            label_text = f"Class {row_idx + 1}:"
-            form.addRow(label_text, le)
-            edits.append(le)
-            # Ensure it's visible if manually added
-            if name == "":
-                le.setFocus()
-                from PyQt5.QtCore import QTimer
-                QTimer.singleShot(50, lambda: scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum()))
-
-        # Initial population
-        for name in sorted(discovered.keys()):
-            add_class_row(name)
-        
-        # If none found, add one empty row to get started
-        if not discovered:
-            add_class_row("")
-
-        scroll.setWidget(scroll_widget)
-        main_layout.addWidget(scroll)
-
-        # Action layout
-        action_layout = QHBoxLayout()
-        add_btn = QPushButton("+ Add Missing Class")
-        add_btn.clicked.connect(lambda: add_class_row(""))
-        action_layout.addWidget(add_btn)
-        action_layout.addStretch()
-        main_layout.addLayout(action_layout)
-        
-        # Buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Apply Classes")
-        buttons.button(QDialogButtonBox.Cancel).setText("Skip (Use Current)")
-        main_layout.addWidget(buttons)
-        buttons.accepted.connect(dlg.accept)
-        buttons.rejected.connect(dlg.reject)
-
-        if dlg.exec_() != QDialog.Accepted:
-            logging.info("User chose NOT to update classes from JSON discovery.")
-            return False
-
-        # Collect edited names and ensure uniqueness
-        edited = []
-        seen = set()
-        for le in edits:
-            val = le.text().strip()
-            if not val:
-                continue
-            
-            # de-dup by appending suffix if necessary
-            orig_val = val
-            suffix = 1
-            while val in seen:
-                val = f"{orig_val}_{suffix}"
-                suffix += 1
-            
-            seen.add(val)
-            edited.append(val)
-
-        if not edited:
-            logging.warning("No classes were entered/confirmed. Keeping current classes.")
-            return False
-
-        # Apply classes for display
-        self.class_manager.classes = edited
-        self.canvas.classes = edited
-
-        # Remap existing canvas boxes to the newly confirmed classes when possible
-        try:
-            self._remap_canvas_boxes_using_json_names()
-        except Exception:
-            logging.debug("_remap_canvas_boxes_using_json_names failed")
-
-        # Refresh UI now that classes + box ids are consistent
-        self.update_labels_panel(self.canvas.boxes)
-        self.app_status_bar.set_status(f"Loaded {len(edited)} classes from JSON for display.")
-        logging.info(f"Loaded {len(edited)} classes from JSON for display. Classes: {edited}")
-        return True
-
-    def _apply_discovered_json_classes(self, discovered):
-        """Apply discovered classes for display without blocking the UI.
-
-        This sets the in-memory classes used for display (class_manager + canvas)
-        but does not overwrite persistent classes.txt on disk. It logs what was
-        applied so the user can still change them later.
-        """
-        if not discovered:
-            return False
-
-        # De-duplicate and sanitize discovered names
-        seen = set()
-        applied = []
-        for nm in discovered:
-            if not nm or not isinstance(nm, str):
-                continue
-            s = nm.strip()
-            if not s or s in seen:
-                continue
-            seen.add(s)
-            applied.append(s)
-
-        if not applied:
-            return False
-        # Apply classes for display only (do not refresh labels panel here).
-        # The calling flow (load_dataset -> load_image) will refresh the image and
-        # labels; avoiding an immediate update prevents selection/refresh races.
-        self.class_manager.classes = applied
-        self.canvas.classes = applied
-        self.app_status_bar.set_status(f"Loaded {len(applied)} classes from JSON for display.")
-        logging.info(f"Auto-applied {len(applied)} discovered JSON classes for display: {applied}")
-        return True
 
     def _remap_canvas_boxes_using_json_names(self):
         """Attempt to remap numeric class ids of current canvas.boxes using JSON names.
@@ -2489,6 +2350,8 @@ class AnnotatorMainWindow(QMainWindow):
             # Save COCO format to the specific COCO file path
             if self.coco_file_path:
                 self._save_coco_annotation(img_name, boxes, polygons)
+            # if not save_coco(self.coco_file_path, img_name, boxes, polygons=polygons):
+            #     QMessageBox.warning(self, "Error", "Failed to save COCO annotation. Image might be missing from the COCO JSON.")
             else:
                 QMessageBox.warning(self, "Error", "COCO file path not set. Cannot save.")
                 logging.error("COCO file path not set. Cannot save annotation.")
