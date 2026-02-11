@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QGroupBox, QVBoxLayout, QRadioButton, QButtonGroup, QLabel, QWidget
 from PyQt5.QtCore import pyqtSignal
-from core.enums import AppMode, DrawingTool
+from universal_annotator.core.enums import AppMode, DrawingTool
 class ModePanel(QGroupBox):
     """
     Panel to select Application Mode (Detection/Segmentation) and Drawing Tool.

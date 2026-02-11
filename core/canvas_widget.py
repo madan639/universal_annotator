@@ -4,10 +4,10 @@ import logging
 from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
-from core.enums import DrawingTool
+from universal_annotator.core.enums import DrawingTool
 from PyQt5.QtGui import QPolygonF
 from PyQt5.QtCore import QPointF
-from core.enums import DrawingTool
+
 
 
 class CanvasWidget(QWidget):
