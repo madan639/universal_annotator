@@ -1396,11 +1396,11 @@ class AnnotatorMainWindow(QMainWindow):
 
     def _prompt_use_discovered_json_classes(self, discovered):
         """Show a dialog listing discovered classes and allow user to rename/confirm them."""
-        if not discovered:
-            return False
+        # If no discovered classes, we'll still show the dialog so user can add some
+        if discovered is None:
+            discovered = {}
 
         # Create dialog with editable fields per discovered class
-        
         dlg = QDialog(self)
         dlg.setWindowTitle("Discovered Classes - Confirm / Edit")
         dlg.setMinimumWidth(500)
@@ -1409,7 +1409,8 @@ class AnnotatorMainWindow(QMainWindow):
         main_layout = QVBoxLayout(dlg)
         
         # Info label
-        info = QLabel(f"Found {len(discovered)} classes in annotation files.\nYou can edit any name before applying.\nLeave blank to use the original name.")
+        msg = f"Found {len(discovered)} classes in annotation files." if discovered else "No classes found in annotation files."
+        info = QLabel(f"{msg}\nYou can rename discovered classes or add missing ones manually.")
         main_layout.addWidget(info)
         
         # Scroll area for many classes
@@ -1418,14 +1419,38 @@ class AnnotatorMainWindow(QMainWindow):
         scroll_widget = QWidget()
         form = QFormLayout(scroll_widget)
         
-        edits = {}
-        for name in sorted(discovered.keys()):
+        edits = []
+        def add_class_row(name=""):
+            row_idx = len(edits)
             le = QLineEdit(name)
-            form.addRow(f"{name}:", le)
-            edits[name] = le
+            le.setPlaceholderText("Enter class name...")
+            label_text = f"Class {row_idx + 1}:"
+            form.addRow(label_text, le)
+            edits.append(le)
+            # Ensure it's visible if manually added
+            if name == "":
+                le.setFocus()
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(50, lambda: scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum()))
+
+        # Initial population
+        for name in sorted(discovered.keys()):
+            add_class_row(name)
         
+        # If none found, add one empty row to get started
+        if not discovered:
+            add_class_row("")
+
         scroll.setWidget(scroll_widget)
         main_layout.addWidget(scroll)
+
+        # Action layout
+        action_layout = QHBoxLayout()
+        add_btn = QPushButton("+ Add Missing Class")
+        add_btn.clicked.connect(lambda: add_class_row(""))
+        action_layout.addWidget(add_btn)
+        action_layout.addStretch()
+        main_layout.addLayout(action_layout)
         
         # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -1442,20 +1467,24 @@ class AnnotatorMainWindow(QMainWindow):
         # Collect edited names and ensure uniqueness
         edited = []
         seen = set()
-        for orig in sorted(discovered.keys()):
-            val = edits[orig].text().strip()
+        for le in edits:
+            val = le.text().strip()
             if not val:
-                val = orig
+                continue
+            
             # de-dup by appending suffix if necessary
-            if val in seen:
-                suffix = 1
-                new_val = f"{val}_{suffix}"
-                while new_val in seen:
-                    suffix += 1
-                    new_val = f"{val}_{suffix}"
-                val = new_val
+            orig_val = val
+            suffix = 1
+            while val in seen:
+                val = f"{orig_val}_{suffix}"
+                suffix += 1
+            
             seen.add(val)
             edited.append(val)
+
+        if not edited:
+            logging.warning("No classes were entered/confirmed. Keeping current classes.")
+            return False
 
         # Apply classes for display
         self.class_manager.classes = edited
