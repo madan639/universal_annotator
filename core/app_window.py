@@ -882,6 +882,11 @@ class AnnotatorMainWindow(QMainWindow):
                 logging.error(f"Failed to create COCO file: {e}")
                 return
             
+            # Reset and load classes for new COCO file
+            self.class_manager.classes = []
+            self.canvas.classes = []
+            self._show_class_management_dialog()  # Let user define classes for new dataset
+
             # Set paths and load
             self.image_dir = img_dir
             self.label_dir = img_parent
@@ -922,6 +927,29 @@ class AnnotatorMainWindow(QMainWindow):
                 logging.error(f"Failed to read COCO file: {e}")
                 return
             
+            # Load categories from existing COCO file and reset class_manager
+            coco_categories = coco_data.get("categories", [])
+            if coco_categories:
+                cat_names = [c.get("name", f"class_{c.get('id',i)}") for i, c in enumerate(coco_categories)]
+                self.class_manager.classes = cat_names
+                self.canvas.classes = cat_names
+                logging.info(f"Loaded {len(cat_names)} categories from COCO file: {cat_names}")
+                # Persist to disk
+                try:
+                    classes_dir = "user_classes"
+                    os.makedirs(classes_dir, exist_ok=True)
+                    file_path = os.path.join(classes_dir, "classes.txt")
+                    with open(file_path, "w") as f:
+                        f.write("\n".join(cat_names))
+                    logging.info(f"Saved COCO categories to '{file_path}'.")
+                except Exception as e:
+                    logging.warning(f"Could not save COCO classes to disk: {e}")
+            else:
+                # No categories in file — reset and let user define
+                self.class_manager.classes = []
+                self.canvas.classes = []
+                self._show_class_management_dialog()
+
             # Set paths and load
             self.image_dir = img_dir
             self.label_dir = os.path.dirname(coco_path)
@@ -950,30 +978,21 @@ class AnnotatorMainWindow(QMainWindow):
         self.coco_file_path = None
         self.json_display_override = False
 
-        # Load classes respecting precedence
+        # Always reset classes when loading a new dataset — never carry over from previous session
+        self.class_manager.classes = []
+        self.canvas.classes = []
+
+        # Try to pre-load from user_classes/classes.txt as an initial suggestion
+        # (the discovery/management dialogs below will override this)
         try:
-            current = self.class_manager.get_classes() or []
-            if current:
-                logging.info("Using in-memory classes (preserve manual/session classes)")
-            else:
-                # Try user_classes first
-                user_path = os.path.join(os.getcwd(), 'user_classes', 'classes.txt')
-                sample_path = os.path.join(os.getcwd(), 'sample_classes', 'classes.txt')
-                if os.path.exists(user_path):
-                    try:
-                        self.class_manager.set_classes_file(user_path)
-                        logging.info(f"Loaded classes from user_classes: {user_path}")
-                    except Exception:
-                        logging.debug("Failed to load user_classes/classes.txt")
-                elif os.path.exists(sample_path):
-                    try:
-                        self.class_manager.set_classes_file(sample_path)
-                        logging.info(f"Loaded classes from sample_classes: {sample_path}")
-                    except Exception:
-                        logging.debug("Failed to load sample_classes/classes.txt")
-                else:
-                    if not hasattr(self.class_manager, 'classes'):
-                        self.class_manager.classes = []
+            user_path = os.path.join(os.getcwd(), 'user_classes', 'classes.txt')
+            sample_path = os.path.join(os.getcwd(), 'sample_classes', 'classes.txt')
+            if os.path.exists(user_path):
+                self.class_manager.set_classes_file(user_path)
+                logging.info(f"Pre-loaded classes from user_classes: {self.class_manager.get_classes()}")
+            elif os.path.exists(sample_path):
+                self.class_manager.set_classes_file(sample_path)
+                logging.info(f"Pre-loaded classes from sample_classes: {self.class_manager.get_classes()}")
         except Exception:
             self.class_manager.classes = []
 
@@ -1917,6 +1936,8 @@ class AnnotatorMainWindow(QMainWindow):
         # now push them into the canvas
         self.canvas.boxes = boxes
         self.canvas.polygons = polygons
+        # Always sync class list so canvas labels reflect dynamically discovered classes
+        self.canvas.classes = self.class_manager.get_classes()
         self.canvas.update()
         
         # Log summary

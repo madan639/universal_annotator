@@ -179,6 +179,18 @@ def prompt_use_discovered_json_classes(window, discovered):
     window.class_manager.classes = edited
     window.canvas.classes = edited
 
+    # Persist to disk so classes survive next launch
+    try:
+        import os
+        classes_dir = "user_classes"
+        os.makedirs(classes_dir, exist_ok=True)
+        file_path = os.path.join(classes_dir, "classes.txt")
+        with open(file_path, "w") as f:
+            f.write("\n".join(edited))
+        logging.info(f"Saved confirmed JSON classes to '{file_path}'.")
+    except Exception as e:
+        logging.warning(f"Could not save classes to disk: {e}")
+
     # Remap existing canvas boxes to the newly confirmed classes when possible
     try:
         window._remap_canvas_boxes_using_json_names()

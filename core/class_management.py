@@ -1,4 +1,5 @@
 import logging
+import os
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QScrollArea, QWidget,
     QFormLayout, QLineEdit, QHBoxLayout, QPushButton,
@@ -6,6 +7,18 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
+
+def _save_classes_to_disk(classes):
+    """Persist a class list to user_classes/classes.txt."""
+    try:
+        classes_dir = "user_classes"
+        os.makedirs(classes_dir, exist_ok=True)
+        file_path = os.path.join(classes_dir, "classes.txt")
+        with open(file_path, "w") as f:
+            f.write("\n".join(classes))
+        logging.info(f"Saved {len(classes)} classes to '{file_path}': {classes}")
+    except Exception as e:
+        logging.warning(f"Could not save classes to disk: {e}")
 
 def prompt_use_discovered_json_classes(window, discovered):
     """Show a dialog listing discovered classes and allow user to rename/confirm them.
@@ -71,6 +84,10 @@ def prompt_use_discovered_json_classes(window, discovered):
 
     if dlg.exec_() != QDialog.Accepted:
         logging.info("User chose NOT to update classes from JSON discovery.")
+        # Still save the current in-memory classes so they persist to disk
+        current = window.class_manager.get_classes()
+        if current:
+            _save_classes_to_disk(current)
         return False
 
     edited = []
@@ -94,6 +111,9 @@ def prompt_use_discovered_json_classes(window, discovered):
     window.class_manager.classes = edited
     window.canvas.classes = edited
 
+    # Persist to disk so classes survive next launch
+    _save_classes_to_disk(edited)
+
     try:
         window._remap_canvas_boxes_using_json_names()
     except Exception:
@@ -106,12 +126,7 @@ def prompt_use_discovered_json_classes(window, discovered):
 
 
 def apply_discovered_json_classes(window, discovered):
-    """Apply discovered classes silently without a dialog.
-
-    Args:
-        window: The main application window instance
-        discovered: Dictionary or list of discovered class names
-    """
+    """Apply discovered classes silently without a dialog."""
     if not discovered:
         return False
 
@@ -131,6 +146,7 @@ def apply_discovered_json_classes(window, discovered):
 
     window.class_manager.classes = applied
     window.canvas.classes = applied
+    _save_classes_to_disk(applied)
     window.app_status_bar.set_status(f"Loaded {len(applied)} classes from JSON for display.")
     logging.info(f"Auto-applied {len(applied)} discovered JSON classes: {applied}")
     return True

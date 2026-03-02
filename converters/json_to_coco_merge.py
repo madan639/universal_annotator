@@ -46,6 +46,7 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
 
     def _extract_bbox(ann):
         """Extract bbox [x, y, w, h] from various formats."""
+        # Standard 'bbox' key
         if "bbox" in ann:
             bbox = ann["bbox"]
             if isinstance(bbox, list) and len(bbox) == 4:
@@ -63,6 +64,24 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
                     w = bbox['xmax'] - x_min
                     h = bbox['ymax'] - y_min
                     return [x_min, y_min, w, h]
+
+        # Handle contour.points with exactly 2 points (top-left + bottom-right = RECTANGLE)
+        contour = ann.get("contour")
+        if contour and isinstance(contour, dict):
+            pts = contour.get("points", [])
+            if len(pts) == 2:
+                try:
+                    if isinstance(pts[0], dict):
+                        x1, y1 = float(pts[0]["x"]), float(pts[0]["y"])
+                        x2, y2 = float(pts[1]["x"]), float(pts[1]["y"])
+                    else:
+                        x1, y1 = float(pts[0][0]), float(pts[0][1])
+                        x2, y2 = float(pts[1][0]), float(pts[1][1])
+                    x_min, y_min = min(x1, x2), min(y1, y2)
+                    return [x_min, y_min, abs(x2 - x1), abs(y2 - y1)]
+                except Exception:
+                    pass
+
         return None
 
     def _extract_polygon(ann):
@@ -81,6 +100,9 @@ def convert_json_folder_to_coco(json_folder, images_folder, output_path=None, cl
                     return flat
             elif isinstance(contour, dict) and "points" in contour:
                 pts = contour["points"]
+                # Skip 2-point contours — those are rectangles, handled by _extract_bbox
+                if len(pts) == 2:
+                    return None
                 flat = []
                 for p in pts:
                     if isinstance(p, dict) and "x" in p and "y" in p:
