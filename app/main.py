@@ -2,9 +2,9 @@ from PyQt5.QtWidgets import QApplication
 import sys
 import os
 import logging
-from universal_annotator.utils.logger import LoggingConfig
-from universal_annotator.core.app_window import AnnotatorMainWindow
-from universal_annotator.ui.themes import ThemeManager
+from utils.logger import LoggingConfig
+from core.app_window import AnnotatorMainWindow
+from ui.themes import ThemeManager
 import platform
 
 def configure_qt_platform():

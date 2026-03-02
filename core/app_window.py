@@ -7,31 +7,32 @@ import traceback
 from PyQt5.QtWidgets import ( 
     QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QFileDialog, QApplication,
     QMessageBox, QCheckBox, QSizePolicy, QListWidgetItem, QDialog, QLabel,
-    QTextEdit, QPushButton, QProgressDialog, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QScrollArea, QWidget
+    QTextEdit, QPushButton, QProgressDialog, QFormLayout, QLineEdit, QDialogButtonBox, QScrollArea
 )
 from PyQt5.QtCore import Qt, QTimer
 from .canvas_widget import CanvasWidget
-from .class_manager import ClassManager, prompt_use_discovered_json_classes
+from .class_manager import ClassManager
 from .managers import ImageManager, AnnotationManager, FormatManager, AutoSaveManager
+from .class_management import prompt_use_discovered_json_classes
 from .json_helper import JSONHelper
-from universal_annotator.ui.themes.theme_manager import ThemeManager 
-from universal_annotator.ui.components import LabelPanel, ControlPanel, LabelListItemWidget
-from universal_annotator.ui.dialogs import ClassSelectionDialog, HelpDialog, AboutDialog, ClassManagementDialog 
-from universal_annotator.ui.menus import AppMenuBar
-from universal_annotator.ui.statusbar import AppStatusBar
-from universal_annotator.ui.messages import get_tooltip, get_status_message
-from universal_annotator.ui.mode_panel import ModePanel
-from universal_annotator.core.enums import AppMode, DrawingTool
-from universal_annotator.converters.txt_to_json_converter import convert_txt_to_json
-from universal_annotator.converters.json_to_txt import convert_json_to_txt
-from universal_annotator.converters.txt_to_annotaion_coco_json import convert_txt_to_coco
-from universal_annotator.converters.json_to_coco_merge import convert_json_folder_to_coco
-from universal_annotator.converters.coco_to_json_converter import convert_coco_to_json_folder
-from universal_annotator.converters.coco_to_txt_converter import convert_coco_to_txt
-from universal_annotator.exporters.json_exporter import save_json
-from universal_annotator.exporters.coco_exporter import save_coco
-from universal_annotator.utils.file_utils import list_images
-from universal_annotator.core.loaders import load_txt_annotations, load_json_annotations, load_coco_annotations
+from ui.themes import ThemeManager
+from ui.components import LabelPanel, ControlPanel, LabelListItemWidget
+from ui.dialogs import ClassSelectionDialog, HelpDialog, AboutDialog, ClassManagementDialog
+from ui.menus import AppMenuBar
+from ui.statusbar import AppStatusBar
+from ui.messages import get_tooltip, get_status_message
+from ui.mode_panel import ModePanel
+from core.enums import AppMode, DrawingTool
+from converters.txt_to_json_converter import convert_txt_to_json
+from converters.json_to_txt import convert_json_to_txt
+from converters.txt_to_annotaion_coco_json import convert_txt_to_coco
+from converters.json_to_coco_merge import convert_json_folder_to_coco
+from converters.coco_to_json_converter import convert_coco_to_json_folder
+from converters.coco_to_txt_converter import convert_coco_to_txt
+from exporters.json_exporter import save_json
+from exporters.coco_exporter import save_coco
+from utils.file_utils import list_images
+from core.loaders import load_txt_annotations, load_json_annotations, load_coco_annotations
 
 def natural_sort_key(filename):
     """Convert a string into a list of mixed integers and strings for natural sorting.
