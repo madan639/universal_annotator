@@ -470,7 +470,7 @@ class AnnotatorMainWindow(QMainWindow):
         # --- Save and Finalize ---
         self.save_annotation(auto=True)
         self.update_status_label()
-        self.app_status_bar.set_status(f"Deleted {len(indices_to_delete)} selected boxes.")
+        self.app_status_bar.set_status(f"Deleted {len(sorted_indices)} selected items.")
 
     def _reindex_selections_after_deletion(self, deleted_idx):
         """Adjusts selected_box_indices and image_selections after a single box deletion."""
