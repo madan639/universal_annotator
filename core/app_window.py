@@ -247,6 +247,8 @@ class AnnotatorMainWindow(QMainWindow):
         self.convert_coco_to_json_btn.clicked.connect(self.convert_coco_to_per_image_json)
         self.convert_coco_to_txt_btn.clicked.connect(self.convert_coco_to_txt)
         self.image_jump_box.currentIndexChanged.connect(self.on_jump_box_activated)
+        # Double-click on canvas box/polygon → change class
+        self.canvas.class_change_requested.connect(self._change_annotation_class)
 
         # Start in view mode
         self.set_view_mode()
@@ -734,6 +736,11 @@ class AnnotatorMainWindow(QMainWindow):
                 logging.error(f"Failed to create labels folder: {e}")
                 return
             
+            # Reset classes and let user define or select the new classes for new dataset and new format
+            self.class_manager.classes = []
+            self.canvas.classes = []
+            self._show_class_management_dialog()
+
             # Set and create files
             self.image_dir = img_dir
             self.label_dir = lbl_dir
@@ -777,6 +784,10 @@ class AnnotatorMainWindow(QMainWindow):
                 logging.warning(f"No {self.format} files found in: {lbl_dir}")
                 return
             
+            # Reset classes before loading — prevents contamination from previous dataset
+            self.class_manager.classes = []
+            self.canvas.classes = []
+
             # Set and load
             self.image_dir = img_dir
             self.label_dir = lbl_dir
@@ -786,10 +797,13 @@ class AnnotatorMainWindow(QMainWindow):
             self.manual_deselect_all = False
             self.image_selections = {}
             
-            # Trigger class discovery for JSON format
+            # Trigger class discovery/dialog based on format
             if self.format == 'JSON':
                 logging.info("[RELOAD] JSON format detected, triggering class discovery...")
                 self._handle_json_class_discovery()
+            else:
+                # TXT format — show class management dialog
+                self._show_class_management_dialog()
             
             self._populate_image_jump_box()
             self.load_image()
@@ -903,9 +917,10 @@ class AnnotatorMainWindow(QMainWindow):
             logging.info(f"Dataset loaded with COCO format. Images: {len(image_files)}. COCO file: {coco_file_path}")
         
         else:
-            # Use existing COCO file
+            # Use existing COCO file — start in the image folder's parent so user doesn't have to re-navigate
+            coco_start_dir = os.path.dirname(img_dir.rstrip('/\\')) if img_dir else os.getcwd()
             coco_path, _ = QFileDialog.getOpenFileName(
-                self, "Select COCO Annotation File", os.getcwd(), "COCO JSON (*.json);;All Files (*)"
+                self, "Select COCO Annotation File", coco_start_dir, "COCO JSON (*.json);;All Files (*)"
             )
             if not coco_path:
                 logging.info("COCO file selection cancelled")
@@ -2081,10 +2096,77 @@ class AnnotatorMainWindow(QMainWindow):
         widget.selection_toggled.connect(self.on_label_toggled_from_widget)
         widget.delete_requested.connect(self.delete_specific_box)
         widget.label_clicked.connect(self.on_label_clicked_from_widget)
+        widget.class_change_requested.connect(self._change_annotation_class)
         item.setSizeHint(widget.sizeHint())
         self.labels_list.addItem(item)
         item.setData(Qt.UserRole, idx)
         self.labels_list.setItemWidget(item, widget)
+
+    def _change_annotation_class(self, u_idx):
+        """Show a class-picker dialog and change the class of the double-clicked annotation."""
+        classes = self.class_manager.get_classes()
+        if not classes:
+            QMessageBox.warning(self, "No Classes", "No classes defined. Please load classes first.")
+            return
+
+        box_count = len(self.canvas.boxes)
+        is_polygon = u_idx >= box_count
+        poly_idx = u_idx - box_count if is_polygon else None
+
+        # Get current class name for dialog title
+        if is_polygon:
+            _, cur_cls = self.canvas.polygons[poly_idx]
+            cur_name = classes[cur_cls] if isinstance(cur_cls, int) and 0 <= cur_cls < len(classes) else str(cur_cls)
+            ann_type = "Polygon"
+        else:
+            box = self.canvas.boxes[u_idx]
+            cur_cls = int(box[4])
+            cur_name = classes[cur_cls] if 0 <= cur_cls < len(classes) else str(cur_cls)
+            ann_type = "Box"
+
+        # Build class picker dialog
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Change Class — {ann_type} (current: {cur_name})")
+        dlg.setMinimumWidth(320)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel(f"Select new class for this {ann_type.lower()}:"))
+
+        from PyQt5.QtWidgets import QListWidget as _QLW
+        picker = _QLW(dlg)
+        for i, name in enumerate(classes):
+            picker.addItem(f"{i}: {name}")
+        # Pre-select current class
+        if isinstance(cur_cls, int) and 0 <= cur_cls < len(classes):
+            picker.setCurrentRow(cur_cls)
+        layout.addWidget(picker)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+        # Also accept on double-click inside the list
+        picker.itemDoubleClicked.connect(lambda _: dlg.accept())
+
+        if dlg.exec_() != QDialog.Accepted:
+            return
+
+        row = picker.currentRow()
+        if row < 0 or row >= len(classes):
+            return
+        new_class_id = row
+
+        # Apply change
+        if is_polygon:
+            pts, _ = self.canvas.polygons[poly_idx]
+            self.canvas.polygons[poly_idx] = (pts, new_class_id)
+        else:
+            x, y, w, h, _ = self.canvas.boxes[u_idx]
+            self.canvas.boxes[u_idx] = (x, y, w, h, new_class_id)
+
+        logging.info(f"[CLASS_CHANGE] {ann_type} {u_idx}: '{cur_name}' → '{classes[new_class_id]}'")
+        self.canvas.update()
+        self.update_labels_panel(self.canvas.boxes)
+        self.save_annotation()
 
     def delete_specific_box(self, u_idx):
         """Delete specific box OR polygon by unified index."""

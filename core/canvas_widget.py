@@ -18,6 +18,7 @@ class CanvasWidget(QWidget):
     drawing_cancelled = pyqtSignal() # Signal when drawing is cancelled by Esc
     box_added = pyqtSignal(tuple)  # Signal when new box is added
     polygon_added = pyqtSignal(tuple) # Signal when new polygon is added
+    class_change_requested = pyqtSignal(int)  # Emits unified index of double-clicked annotation
     
     def __init__(self, parent=None, mode="view", classes=None):
         super().__init__(parent)
@@ -260,6 +261,43 @@ class CanvasWidget(QWidget):
             logging.debug(f"Mouse press at widget({pos.x()},{pos.y()}) -> image({img_x},{img_y})")
             self.start_pos = (img_x, img_y)
             self.editing_box_index = None # Ensure we are not in edit mode
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to trigger class change for the clicked annotation."""
+        if self.image is None or self.mode != "edit":
+            return
+
+        pos = event.pos()
+        img_x = int((pos.x() - self.offset_x) / self.scale_x)
+        img_y = int((pos.y() - self.offset_y) / self.scale_y)
+        img_x = max(0, min(img_x, self.image.shape[1] - 1))
+        img_y = max(0, min(img_y, self.image.shape[0] - 1))
+
+        # Find smallest box under cursor
+        candidates = [
+            (w * h, idx)
+            for idx, (x, y, w, h, _) in enumerate(self.boxes)
+            if x <= img_x < x + w and y <= img_y < y + h
+        ]
+        if candidates:
+            candidates.sort()
+            _, best_idx = candidates[0]
+            logging.info(f"[DOUBLE_CLICK] Box {best_idx} — emitting class_change_requested")
+            self.class_change_requested.emit(best_idx)
+            return
+
+        # Check polygons — find the one whose bounding rect contains the click
+        box_count = len(self.boxes)
+        for i, (pts, _) in enumerate(self.polygons):
+            if not pts:
+                continue
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            if min(xs) <= img_x <= max(xs) and min(ys) <= img_y <= max(ys):
+                u_idx = box_count + i
+                logging.info(f"[DOUBLE_CLICK] Polygon {i} (unified={u_idx}) — emitting class_change_requested")
+                self.class_change_requested.emit(u_idx)
+                return
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for box preview or editing."""

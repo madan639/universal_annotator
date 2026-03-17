@@ -6,22 +6,27 @@ from PyQt5.QtGui import QMouseEvent
 
 
 class ClickableLabel(QLabel):
-    """A QLabel that emits a signal when clicked."""
+    """A QLabel that emits signals when clicked or double-clicked."""
     clicked = pyqtSignal(QMouseEvent)
+    double_clicked = pyqtSignal(QMouseEvent)
 
     def mousePressEvent(self, event: QMouseEvent):
         self.clicked.emit(event)
         super().mousePressEvent(event)
 
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        self.double_clicked.emit(event)
+        super().mouseDoubleClickEvent(event)
 
 class LabelListItemWidget(QWidget):
     """
     Custom widget for each item in the labels list, containing a checkbox,
     a clickable label, and a delete button.
     """
-    delete_requested = pyqtSignal(int)  # Emits box_idx
-    selection_toggled = pyqtSignal(int, bool)  # Emits box_idx, is_checked
-    label_clicked = pyqtSignal(int, QMouseEvent)  # Emits box_idx, mouse_event
+    delete_requested = pyqtSignal(int)       # Emits box_idx
+    selection_toggled = pyqtSignal(int, bool) # Emits box_idx, is_checked
+    label_clicked = pyqtSignal(int, QMouseEvent)        # Emits box_idx, mouse_event
+    class_change_requested = pyqtSignal(int)  # Emits box_idx — triggered on double-click
 
     def __init__(self, box_idx, class_name, is_checked, parent=None):
         super().__init__(parent)
@@ -45,7 +50,9 @@ class LabelListItemWidget(QWidget):
         # Label
         self.label = ClickableLabel(f"{self.box_idx}: {class_name}")
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.label.setToolTip("Double-click to change class")
         self.label.clicked.connect(lambda event: self.label_clicked.emit(self.box_idx, event))
+        self.label.double_clicked.connect(lambda event: self.class_change_requested.emit(self.box_idx))
         layout.addWidget(self.label)
 
         # Delete button
