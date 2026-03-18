@@ -100,20 +100,21 @@ class CanvasWidget(QWidget):
         self.zoom_changed.emit(self.zoom_level)
         self.update()
 
-    def get_handle_at_pos(self, img_x, img_y):
-        """Check if a click is on a handle of any selected box."""
-        handle_size = 8 / self.scale_x # 8 pixel handle in screen space
-        
-        # Iterate in reverse so top-most boxes are checked first
-        # Filter out None values from selected_boxes before sorting to prevent TypeError
-        valid_selected_indices = [i for i in self.selected_boxes if i is not None]
+    def get_handle_at_pos(self, img_x, img_y, check_all=False):
+        """Check if a click is on a handle of any selected (or all) box."""
+        handle_size = 12 / self.scale_x  # 12 pixel handle in screen space
 
-        for idx in sorted(valid_selected_indices, reverse=True):
-            if not (0 <= idx < len(self.boxes)): # This check is now safer
+        # check_all=True lets us hit handles on any box, not just selected ones
+        indices = range(len(self.boxes)) if check_all else [
+            i for i in self.selected_boxes if i is not None and 0 <= i < len(self.boxes)
+        ]
+
+        for idx in sorted(indices, reverse=True):
+            if not (0 <= idx < len(self.boxes)):
                 continue
-            
+
             x, y, w, h, _ = self.boxes[idx]
-            
+
             handles = {
                 'top-left': (x, y), 'top-right': (x + w, y),
                 'bottom-left': (x, y + h), 'bottom-right': (x + w, y + h),
@@ -125,10 +126,19 @@ class CanvasWidget(QWidget):
                 if abs(img_x - hx) < handle_size and abs(img_y - hy) < handle_size:
                     return idx, name
 
-            # Check if inside the box for moving
+            # Inside box body = move
             if x < img_x < x + w and y < img_y < y + h:
                 return idx, 'move'
                 
+        return None, None
+
+    def get_poly_vertex_at_pos(self, img_x, img_y):
+        """Return (poly_idx, pt_idx) if click is near a polygon vertex."""
+        radius = 10 / self.scale_x
+        for i, (pts, _) in enumerate(self.polygons):
+            for j, (px, py) in enumerate(pts):
+                if abs(img_x - px) < radius and abs(img_y - py) < radius:
+                    return i, j
         return None, None
 
     def _update_cursor(self, pos):
@@ -317,8 +327,8 @@ class CanvasWidget(QWidget):
         img_x = max(0, min(img_x, self.image.shape[1] - 1))
         img_y = max(0, min(img_y, self.image.shape[0] - 1))
         
-        # --- Handle box editing ---
-        if self.editing_box_index is not None:
+        # --- Handle box editing (resize/move) ---
+        if self.editing_box_index is not None and self.start_pos is not None:
             self.changed = True
             orig_x, orig_y, orig_w, orig_h, class_id = self.original_box_on_edit
             dx = img_x - self.start_pos[0]
@@ -327,19 +337,28 @@ class CanvasWidget(QWidget):
             x, y, w, h = orig_x, orig_y, orig_w, orig_h
 
             if self.editing_handle == 'move':
-                x, y = orig_x + dx, orig_y + dy
-            # Corner handles
-            elif 'right' in self.editing_handle: w = orig_w + dx
-            elif 'left' in self.editing_handle: x, w = orig_x + dx, orig_w - dx
-            
-            if 'bottom' in self.editing_handle: h = orig_h + dy
-            elif 'top' in self.editing_handle: y, h = orig_y + dy, orig_h - dy
+                x = max(0, min(orig_x + dx, self.image.shape[1] - orig_w))
+                y = max(0, min(orig_y + dy, self.image.shape[0] - orig_h))
+            elif 'right' in self.editing_handle:  w = max(5, orig_w + dx)
+            elif 'left' in self.editing_handle:   x, w = orig_x + dx, max(5, orig_w - dx)
 
-            # Normalize box (w/h must be positive)
+            if 'bottom' in self.editing_handle:   h = max(5, orig_h + dy)
+            elif 'top' in self.editing_handle:    y, h = orig_y + dy, max(5, orig_h - dy)
+
             if w < 0: x, w = x + w, -w
             if h < 0: y, h = y + h, -h
 
             self.boxes[self.editing_box_index] = (x, y, w, h, class_id)
+            self.update()
+            return
+
+        # --- Handle polygon vertex drag ---
+        if self.editing_poly_index is not None and isinstance(self.editing_handle, int):
+            pts, class_id = self.polygons[self.editing_poly_index]
+            new_pts = list(pts)
+            new_pts[self.editing_handle] = (img_x, img_y)
+            self.polygons[self.editing_poly_index] = (new_pts, class_id)
+            self.changed = True
             self.update()
             return
 
@@ -374,14 +393,24 @@ class CanvasWidget(QWidget):
         if self.mode != "edit":
             return
 
-        # --- Finalize editing ---
+        # --- Finalize box editing ---
         if self.editing_box_index is not None:
             logging.debug(f"Finished editing box {self.editing_box_index}")
             self.editing_box_index = None
             self.editing_handle = None
             self.start_pos = None
             self.original_box_on_edit = None
-            self.update() # Redraw to remove handles if mouse moves away
+            self.update()
+            return
+
+        # --- Finalize polygon vertex drag ---
+        if self.editing_poly_index is not None and isinstance(self.editing_handle, int):
+            logging.debug(f"Finished editing polygon vertex {self.editing_handle}")
+            self.editing_poly_index = None
+            self.editing_handle = None
+            self.start_pos = None
+            self.changed = True
+            self.update()
             return
 
         # --- Finalize new box ---
@@ -511,24 +540,21 @@ class CanvasWidget(QWidget):
             rh = int(bh * self.scale_y)
             painter.drawRect(rx, ry, rw, rh)
 
-            # Draw handles if in edit mode
+            # Draw handles if in edit mode — large, bright blue squares for easy grabbing
             if self.mode == 'edit':
-                # Use a white pen with a black outline for high visibility
-                handle_pen = QPen(QColor(0, 0, 0, 100)) # More transparent black outline
-                handle_pen.setWidth(1)
-                painter.setPen(handle_pen)
-                painter.setBrush(QColor(255, 255, 255, 80)) # More transparent white fill
-                handle_size = 8
-
-                # Draw all 8 handles (corners and mid-points)
-                painter.drawRect(rx - handle_size//2, ry - handle_size//2, handle_size, handle_size)  # Top-left
-                painter.drawRect(rx + rw - handle_size//2, ry - handle_size//2, handle_size, handle_size)  # Top-right
-                painter.drawRect(rx - handle_size//2, ry + rh - handle_size//2, handle_size, handle_size)  # Bottom-left
-                painter.drawRect(rx + rw - handle_size//2, ry + rh - handle_size//2, handle_size, handle_size)  # Bottom-right
-                painter.drawRect(rx + rw//2 - handle_size//2, ry - handle_size//2, handle_size, handle_size)  # Top
-                painter.drawRect(rx + rw//2 - handle_size//2, ry + rh - handle_size//2, handle_size, handle_size)  # Bottom
-                painter.drawRect(rx - handle_size//2, ry + rh//2 - handle_size//2, handle_size, handle_size)  # Left
-                painter.drawRect(rx + rw - handle_size//2, ry + rh//2 - handle_size//2, handle_size, handle_size)  # Right
+                handle_size = 12
+                hs = handle_size // 2
+                handle_pts = [
+                    (rx, ry),           (rx + rw, ry),
+                    (rx, ry + rh),      (rx + rw, ry + rh),
+                    (rx + rw//2, ry),   (rx + rw//2, ry + rh),
+                    (rx, ry + rh//2),   (rx + rw, ry + rh//2),
+                ]
+                # White outline
+                painter.setPen(QPen(QColor(255, 255, 255), 2))
+                painter.setBrush(QColor(30, 120, 255, 230))   # solid blue
+                for (hx, hy) in handle_pts:
+                    painter.drawRect(hx - hs, hy - hs, handle_size, handle_size)
 
             # Draw label for selected box
             if self.classes and class_id < len(self.classes):

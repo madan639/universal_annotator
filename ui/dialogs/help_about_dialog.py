@@ -64,18 +64,17 @@ class HelpDialog(QDialog):
         
         text = QTextEdit()
         text.setReadOnly(True)
-        text.setMarkdown("""
-# Getting Started with Universal Annotator
+        text.setMarkdown("""# Getting Started with Universal Annotator
 
 ## Basic Workflow
 
 1. **Load Dataset**: Click "Load Dataset" to select your image and label folders.
 2. **Select Format**: The format is auto-detected, or you can select it manually.
-3. **Switch to Edit Mode**: Press **E** to start annotating.
-4. **Enter Drawing Mode**: Press **M** to enable drawing, then click and drag on the image to create boxes.
-5. **Select Class**: Choose the class when prompted
-6. **Navigate**: Use Previous/Next buttons or A/D keys to move between images
-7. **Save**: Click "Save (S)" or use auto-save
+3. **Edit existing boxes**: Press **E** — you can now click-drag boxes to move them, or drag handles to resize.
+4. **Draw new boxes**: Press **M** — click and drag on the image to create a new box.
+5. **Navigate**: Use `A` / `D` keys or Previous/Next buttons to move between images.
+6. **Save**: Press `S` or click "Save".
+7. **View Mode**: Press `X` to enter read-only view.
 
 ## Supported Formats
 
@@ -85,8 +84,11 @@ class HelpDialog(QDialog):
 
 ## Modes
 
-- **View Mode**: Read-only mode for reviewing annotations
-- **Edit Mode**: Add, modify, and manage annotations
+| Mode | Key | Colour | Description |
+|------|-----|--------|-------------|
+| Edit | `E` | 🟠 Orange | Move / resize existing boxes |
+| Draw | `M` | 🟢 Green | Draw a brand-new box |
+| View | `X` | 🔵 Blue | Read-only, no changes |
 
         """)
         layout.addWidget(text)
@@ -109,30 +111,34 @@ class HelpDialog(QDialog):
 | `A` | Previous Image |
 | `D` | Next Image |
 
-## Editing & Drawing
+## Mode Switching
+| Key | Colour | Action |
+|-----|--------|--------|
+| `E` | 🟠 Orange | **Edit mode** — move & resize existing boxes/polygons |
+| `M` | 🟢 Green | **Draw mode** — click and drag to create a new box |
+| `X` | 🔵 Blue | **View mode** — read-only, no changes |
+| `Esc` | — | Cancel drawing / go to View mode |
+
+## Editing
 | Key | Action |
 |-----|--------|
-| `E` | Switch to Edit Mode |
-| `X` | Switch to View Mode |
-| `M` | Toggle Drawing Mode (in Edit Mode) |
-| `C` | Cancel incomplete polygon/box |
-| `Delete` | Remove selected box(es) or polygon(s) |
+| `Delete` | Delete selected box(es) or polygon(s) |
 | `S` | Save current annotations |
-| `Esc` | Cancel drawing | Exit application |
-| `Enter` | Close polygon (in Segmentation) |
+| `C` | Cancel in-progress polygon or box draw |
+| `Enter` | Close polygon (Segmentation mode) |
+| Double-click box | Change the class of that annotation |
 
 ## Selection
 | Key | Action |
 |-----|--------|
-| `Ctrl+A` | Select All Boxes |
-| `Ctrl+D` | Deselect All Boxes |
+| `Ctrl+A` | Select All |
+| `Ctrl+D` | Deselect All |
 
 ## General
 | Key | Action |
 |-----|--------|
-| `Q` / `Esc` | Exit Application |
-| `F1` | Open Help Dialog |
-| `F5` | Refresh Current Image |
+| `Q` | Quit application |
+| `F1` | Open Help |
 
         """)
         layout.addWidget(text)
@@ -170,60 +176,41 @@ The tool provides several utilities to convert between annotation formats:
         
         text = QTextEdit()
         text.setReadOnly(True)
-        text.setMarkdown("""
-# Tips & Tricks
+        text.setMarkdown("""# Tips & Tricks
 
-## Efficient Annotation
-1. **Use Keyboard Shortcuts**: `A` and `D` for navigation, `E` for Edit Mode.
-2. **Jump to Image**: Use the dropdown list below the "Save" button to jump directly to any image in your dataset.
-3. **Auto-Save**: Enable auto-save to avoid losing work when navigating between images.
-4. **Quick Deletion**: Use the trash bin icon next to any annotation in the right-hand panel to delete it instantly.
-5. **Cancel Drawing**: If you make a mistake while drawing a box, press `C` before releasing the mouse to cancel it.
-6. **Smart Selection**: When boxes overlap, clicking on them automatically selects the smallest box under your cursor. This makes it easy to select and delete inner boxes.
-7. **Single Selection**: To quickly select just one box, click it directly on the image. All other boxes will be deselected.
+## Working with Annotations
+1. **Press E first** to enter Edit mode, then drag any box to move it or grab a blue handle to resize.
+2. **Press M** when you want to draw a brand-new box; press E again when done.
+3. **Double-click** any box or polygon (canvas or side list) to change its class instantly.
+4. **Jump to Image**: Use the dropdown below the Save button to jump directly to any image.
+5. **Quick Deletion**: Use the trash icon next to any annotation in the right-hand panel, or select and press Delete.
+6. **Smart Selection**: When boxes overlap, the smallest box under your cursor is selected.
+7. **Polygon Vertex Drag**: In Edit mode, click near a polygon vertex dot and drag to reshape it.
 
 ## Best Practices
 
 ### Annotation Quality
 - Draw boxes tightly around objects
-- Include full object within the box
-- Be consistent with box placement
-- Use appropriate class labels
+- Include the full object within the box
+- Be consistent with class labels
 
 ### Dataset Organization
 - Keep images and labels in separate folders
-- Use consistent file naming (6f.jpg with 6f.txt)
-- Ensure images are readable formats (JPG, PNG)
-- Verify labels before exporting
-
-### Performance
-- Use smaller images for faster interaction
-- Disable unnecessary overlays in view mode
-- Clear unused selections to reduce clutter
-- Use the format conversion buttons to easily switch between annotation types.
+- Use consistent file naming
 - Save regularly to avoid data loss
 
 ## Troubleshooting
 
-### Images not loading
-- Check image folder path
-- Ensure files are supported formats (JPG, PNG, BMP)
-- Verify file permissions
+### Box drawing not working
+- Make sure you are in **Draw Mode** (press `M`). The status bar turns green.
 
-### Labels not appearing
-- Ensure labels folder is selected correctly
-- Check annotation format matches files
-- Verify label file naming matches images
-
-### Box drawing issues
-- Make sure you are in **Edit Mode** (press `E`).
-- Click and drag to create boxes. They must be larger than 5x5 pixels.
+### Can't move or resize boxes
+- Make sure you are in **Edit Mode** (press `E`). Blue handles appear on selected boxes.
 
 ### Polygon Drawing (Segmentation Mode)
-- **Left Click**: Add points to the polygon.
-- **Right Click** or **Enter**: Finish and close the polygon.
+- **Left Click**: Add points.
+- **Right Click** or **Enter**: Finish the polygon.
 - **Esc**: Cancel the current drawing.
-- **Select**: Click inside a polygon to select it.
 
         """)
         layout.addWidget(text)

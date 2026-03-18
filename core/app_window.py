@@ -1590,46 +1590,72 @@ class AnnotatorMainWindow(QMainWindow):
 
     # ----------------------------------------------------------------
     def set_edit_mode(self):
+        """E key: edit existing annotations (move / resize). Drawing is OFF."""
         self.mode = "edit"
         self.canvas.mode = "edit"
-        # Auto-enable drawing mode so user can immediately draw
-        self.canvas.set_drawing_mode(True)
+        self.canvas.set_drawing_mode(False)   # <-- drawing OFF
         self.update_status_label()
         self.app_status_bar.set_mode("edit")
-        self.app_status_bar.set_status("Edit Mode Enabled. Click and drag to draw boxes. Press 'X' to disable drawing.")
+        self.app_status_bar.set_status("EDIT mode — drag a box/handle to move or resize. Press M to draw new boxes.")
+
+    def set_draw_mode(self):
+        """M key: draw a new annotation. Drawing is ON."""
+        self.mode = "edit"                     # canvas still needs edit mode
+        self.canvas.mode = "edit"
+        self.canvas.set_drawing_mode(True)    # <-- drawing ON
+        self.update_status_label(draw=True)
+        self.app_status_bar.set_mode("edit")
+        self.app_status_bar.set_status("DRAW mode — click and drag to draw a new box. Press E to switch to edit.")
 
     def set_view_mode(self):
         self.mode = "view"
         self.canvas.mode = "view"
+        self.canvas.set_drawing_mode(False)
         self.update_status_label()
         self.app_status_bar.set_mode("view")
         self.app_status_bar.set_status(get_status_message("view_mode_enabled"))
     
-    def update_status_label(self):
+    def update_status_label(self, draw=False):
         """Update status label to show current mode and info."""
         if not self.image_files:
-            mode_text = "EDIT MODE" if self.mode == "edit" else "VIEW MODE"
+            if draw:
+                mode_text = "DRAW MODE"
+            elif self.mode == "edit":
+                mode_text = "EDIT MODE"
+            else:
+                mode_text = "VIEW MODE"
             self.status_label.setText(mode_text)
             return
         
+        draw = self.canvas.is_drawing_enabled
         current_pos = self.current_index + 1
         total_images = len(self.image_files)
         img_name = self.image_files[self.current_index]
         box_count = len(self.canvas.boxes)
-        
-        mode_indicator = "EDIT MODE" if self.mode == "edit" else "VIEW MODE"
+
+        if draw:
+            mode_indicator = "DRAW MODE"
+        elif self.mode == "edit":
+            mode_indicator = "EDIT MODE"
+        else:
+            mode_indicator = "VIEW MODE"
+
         self.status_label.setText(
             f"[{current_pos}/{total_images}] {img_name} ({box_count} boxes) | {mode_indicator} | Format: {self.format}"
         )
-        
+
         # Update status bar
         self.app_status_bar.set_image_info(current_pos, total_images, img_name)
         self.app_status_bar.set_box_count(box_count)
         if self.format:
             self.app_status_bar.set_format(self.format)
-        
-        # Style status bar - orange background for edit mode
-        if self.mode == "edit":
+
+        # orange=draw, yellow=edit, blue=view
+        if draw:
+            self.status_label.setStyleSheet(
+                "background-color: #4caf50; color: white; padding: 8px; font-weight: bold; border-radius: 4px;"
+            )
+        elif self.mode == "edit":
             self.status_label.setStyleSheet(
                 "background-color: #ff9800; color: white; padding: 8px; font-weight: bold; border-radius: 4px;"
             )
@@ -1647,23 +1673,30 @@ class AnnotatorMainWindow(QMainWindow):
         # Navigation
         self.shortcut_next = QShortcut(QKeySequence(Qt.Key_D), self)
         self.shortcut_next.activated.connect(self.next_image_action)
-        
+
         self.shortcut_prev = QShortcut(QKeySequence(Qt.Key_A), self)
         self.shortcut_prev.activated.connect(self.prev_image_action)
+
+        # Mode switching
+        self.shortcut_edit = QShortcut(QKeySequence(Qt.Key_E), self)
+        self.shortcut_edit.activated.connect(self.set_edit_mode)
+
+        self.shortcut_draw = QShortcut(QKeySequence(Qt.Key_M), self)
+        self.shortcut_draw.activated.connect(self.set_draw_mode)
+
+        self.shortcut_view = QShortcut(QKeySequence(Qt.Key_X), self)
+        self.shortcut_view.activated.connect(self.view_mode_action)
 
         # Actions
         self.shortcut_save = QShortcut(QKeySequence(Qt.Key_S), self)
         self.shortcut_save.activated.connect(self.save_action)
-        
+
         self.shortcut_delete = QShortcut(QKeySequence(Qt.Key_Delete), self)
         self.shortcut_delete.activated.connect(self.delete_action)
-        
+
         self.shortcut_cancel = QShortcut(QKeySequence(Qt.Key_C), self)
         self.shortcut_cancel.activated.connect(self.cancel_action)
-        
-        self.shortcut_view = QShortcut(QKeySequence(Qt.Key_X), self)
-        self.shortcut_view.activated.connect(self.view_mode_action)
-        
+
         self.shortcut_quit = QShortcut(QKeySequence(Qt.Key_Q), self)
         self.shortcut_quit.activated.connect(self.close_prompt_action)
 
@@ -2851,19 +2884,17 @@ class AnnotatorMainWindow(QMainWindow):
             self.app_status_bar.set_status("Conversion failed.")
 
     def keyPressEvent(self, event):
-        """Handle global key events."""
+        """Handle global key events not covered by QShortcuts."""
         if event.key() == Qt.Key_Escape:
-             # Always treat Escape as Quit/Close request - use prompt!
-             self.close_prompt()
-             return
-        
-        # Explicitly handle V for View Mode and E for Edit Mode to ensure reliability
-        if event.key() == Qt.Key_V:
-            self.set_view_mode()
+            # Tier 1: cancel in-progress drawing
+            if self.canvas.current_box or self.canvas.current_polygon:
+                self.cancel_action()
+            # Tier 2: exit edit/draw mode to view
+            elif self.mode == "edit" or self.canvas.is_drawing_enabled:
+                self.set_view_mode()
+            # Tier 3: already in view mode → prompt to close
+            else:
+                self.close_prompt()
             return
-        
-        if event.key() == Qt.Key_E:
-            self.set_edit_mode()
-            return
-            
+
         super().keyPressEvent(event)

@@ -53,15 +53,18 @@ class AppMenuBar(QMenuBar):
         """Create Edit menu"""
         edit_menu = self.addMenu("Edit")
         
-        # Edit Mode
-        edit_mode_action = edit_menu.addAction("Edit Mode")
-        edit_mode_action.setShortcut("E")
-        edit_mode_action.setStatusTip("Switch to Edit Mode")
+        # Edit Mode (E)
+        edit_mode_action = edit_menu.addAction("Edit Mode  (E)")
+        edit_mode_action.setStatusTip("Switch to Edit Mode — move & resize boxes")
         edit_mode_action.triggered.connect(self.parent.set_edit_mode)
-        
-        # View Mode
-        view_mode_action = edit_menu.addAction("View Mode")
-        view_mode_action.setShortcut("V")
+
+        # Draw Mode (M)
+        draw_mode_action = edit_menu.addAction("Draw Mode  (M)")
+        draw_mode_action.setStatusTip("Switch to Draw Mode — draw new boxes")
+        draw_mode_action.triggered.connect(self.parent.set_draw_mode)
+
+        # View Mode (X)
+        view_mode_action = edit_menu.addAction("View Mode  (X)")
         view_mode_action.setStatusTip("Switch to View Mode")
         view_mode_action.triggered.connect(self.parent.set_view_mode)
         
