@@ -224,13 +224,13 @@ A: See [README.md](README.md) Supported Annotation Formats
 
 ## Document Statistics
 
-| Document | Lines | Topics | Target |
-|----------|-------|--------|--------|
-| README.md | 250+ | Overview, features, guide | Everyone |
-| QUICKSTART.md | 300+ | Quick start, tasks, tips | Users |
-| UI_IMPROVEMENTS.md | 400+ | Features, customization | Users/Devs |
-| CONTRIBUTING_UI.md | 500+ | Development guide | Developers |
-| UI_ENHANCEMENT_SUMMARY.md | 250+ | Technical overview | Developers |
+| Document                    | Lines | Topics                     | Target     |
+|----------                   |-------|----------------------------|------------|
+| README.md                   | 250+  | Overview, features, guide  | Everyone   |
+| QUICKSTART.md               | 300+  | Quick start, tasks, tips   | Users      |
+| UI_IMPROVEMENTS.md          | 400+  | Features, customization    | Users/Devs |
+| CONTRIBUTING_UI.md          | 500+  | Development guide          | Developers |
+| UI_ENHANCEMENT_SUMMARY.md   | 250+  | Technical overview         | Developers |
 
 ## Updates and Changelog
 

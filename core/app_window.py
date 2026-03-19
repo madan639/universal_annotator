@@ -2458,7 +2458,7 @@ class AnnotatorMainWindow(QMainWindow):
             img_h, img_w = self.canvas.image.shape[:2]
             
             with open(label_file, "w") as f:
-                # 1. BBoxes (YOLO Detection)
+                # 1. BBoxes (YOLO Format Detection)
                 for box in boxes:
                     x, y, w, h, class_id = box
                     # Convert to normalized TXT format
@@ -2468,7 +2468,7 @@ class AnnotatorMainWindow(QMainWindow):
                     bh = h / img_h
                     f.write(f"{int(class_id)} {xc:.6f} {yc:.6f} {bw:.6f} {bh:.6f}\n")
                 
-                # 2. Polygons (YOLO Segmentation)
+                # 2. Polygons (YOLO Format Segmentation)
                 for pts, class_id in polygons:
                     # Format: <class-index> <x1> <y1> <x2> <y2> ... <xn> <yn> (Normalized)
                     norm_points = []

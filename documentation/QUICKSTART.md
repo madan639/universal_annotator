@@ -47,16 +47,16 @@ Your annotations are automatically saved in the selected format:
 
 ## Keyboard Shortcuts (Essential)
 
-| Key | Action |
-|-----|--------|
-| **A** | Previous image |
-| **D** | Next image |
-| **E** | Edit mode |
-| **V** | View mode |
-| **Delete** | Remove last box |
-| **S** | Save |
-| **F1** | Help |
-| **Esc** | Exit |
+| Key         | Action         |
+|-----        |--------        |
+| **A**       | Previous image |
+| **D**       | Next image     |
+| **E**       | Edit mode      |
+| **V**       | View mode      |
+| **Delete**  | Remove last box|
+| **S**       | Save           |
+| **F1**      | Help           |
+| **Esc**     | Exit           |
 
 ## Common Tasks
 
@@ -99,15 +99,15 @@ These actions create new files and do not modify your original annotations.
 │  Menu Bar: File | Edit | View | Help    │                  │
 ├─────────────────────────────────────────┤  Status Bar      │
 │  [Load] [Format] [Edit] [View] [A] [D]  │                  │
-│  [Save] [Auto Save ☑]                   │  [1/20] mode    │
-├────────────────────────┬────────────────┤  [Format: Txt]  │
+│  [Save] [Auto Save ☑]                   │  [1/20] mode     │
+├────────────────────────┬────────────────┤  [Format: Txt]   │
 │                        │ Annotations:   │                  │
-│   Image Canvas         │ ☑ Class #0    │                  │
-│   (Draw boxes here)    │ ☑ Class #1    │                  │
-│                        │ ☐ Class #2    │                  │
-│                        │               │                  │
-│                        │ [Select All]  │                  │
-│                        │ [Deselect All]│                  │
+│   Image Canvas         │ ☑ Class #0     │                  │
+│   (Draw boxes here)    │ ☑ Class #1     │                  │
+│                        │ ☐ Class #2     │                  │
+│                        │                │                  │
+│                        │ [Select All]   │                  │
+│                        │ [Deselect All] │                  │
 └────────────────────────┴────────────────┴──────────────────┘
 ```
 

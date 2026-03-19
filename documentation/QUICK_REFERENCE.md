@@ -99,7 +99,7 @@ labels/
 
 | Format | File Type | Use Case |
 |--------|-----------|----------|
-| **TXT** | `.txt` | Per-image labels (YOLO style) |
+| **TXT** | `.txt` | Per-image labels (YOLO Format) |
 | **JSON** | `.json` | Per-image flexible format |
 | **COCO** | `_annotations.coco.json` | Unified single file |
 
@@ -128,6 +128,7 @@ A: You'll see a warning, but can still continue. Manually create files if needed
 A: Yes, just delete the created files/folders and reload the dataset.
 
 ## 📞 Need Help?
+A: Create a Issue in the GitHub Repository.
 
 - Check if label folder is empty
 - Try skipping the dialog and creating files manually

@@ -17,10 +17,12 @@ A professional, modern, and powerful image annotation tool designed for creating
 - **Dual Annotation Modes**:
     - **Annotation Mode (Object Detection)**: Standard bounding box annotation.
     - **Segmentation Mode (Polygon)**: Create precise polygon annotations for semantic segmentation tasks.
-- **Dual View Modes**:
-    - **Edit Mode**: For creating and modifying annotations.
-    - **View Mode**: A read-only mode for safe reviewing.
-- **Advanced Editing**: Interactively move and resize any bounding box using intuitive drag handles.
+- **Three-Tier View System**:
+    - **Edit Mode (E)**: For interactively moving and resizing existing boxes and polygons.
+    - **Draw Mode (M)**: For creating brand-new annotations.
+    - **View Mode (X)**: A read-only mode for safe reviewing.
+- **Advanced Editing**: Interactively move, resize, and reshape any bounding box or polygon using intuitive drag handles.
+- **Instant Class Editing**: Double-click any annotation on the canvas or in the side list to instantly change its class label.
 - **Nested Annotations**: Create bounding boxes inside existing ones, perfect for annotating objects within objects.
 - **Intelligent Image Sorting**: Uses natural sorting to correctly order files like `image_2.jpg` before `image_10.jpg`.
 - **Selection Memory**: Remembers which bounding boxes were selected for each image, restoring them when you navigate back.
@@ -69,24 +71,26 @@ python app.py
    - you can change the format later if needed.
 
 2. **Annotate Images (Object Detection)**
-   - Press **E** to enter **Edit Mode**.
+   - Press **M** to enter **Draw Mode** (status bar turns green).
    - Make sure "Annotation" mode is selected in the left panel.
    - Click and drag on the image to draw a bounding box.
    - Select the appropriate class from the dialog that appears.
    - Use **A/D** or the **Previous/Next** buttons to navigate between images.
 
 3. **Annotate Images (Segmentation)**
+   - Press **M** to enter **Draw Mode**.
    - Select **"Segmentation"** mode in the left panel.
    - **Left-Click** on the canvas to add point vertices.
    - **Right-Click** or press **Enter** to close the polygon.
    - Press **Esc** to cancel drawing.
    - Select the class from the dialog.
-   - Note: Polygons are saved as "contours" in JSON format or >5 values in TXT format.
 
 4. **Edit Annotations**
-   - In **Edit Mode** (but not Drawing Mode), click on a box to select it.
-   - Drag the handles to resize it or drag the box itself to move it.
-   - Press **Delete** to remove any selected boxes.
+   - Press **E** to enter **Edit Mode** (status bar turns orange).
+   - Click inside any box or polygon and drag to move it.
+   - Drag the blue 12px handles to resize bounding boxes or reshape polygons.
+   - **Double-click** any annotation to change its class.
+   - Press **Delete** to remove selected annotations.
 
 5. **Save Your Work**
    - Press **S** to save manually.
@@ -96,12 +100,12 @@ python app.py
 ### Supported Annotation Formats
 
 #### TXT Format (.txt files)
-**Object Detection (YOLO):**
+**Object Detection (YOLO Format):**
 ```
 <class_id> <x_center> <y_center> <width> <height>
 0 0.5 0.5 0.3 0.4
 ```
-**Segmentation (YOLO-Seg):**
+**Segmentation (YOLO-Seg Format):**
 ```
 <class_id> <x1> <y1> <x2> <y2> <x3> <y3> ...
 0 0.1 0.1 0.2 0.3 0.4 0.5 ...
@@ -136,15 +140,15 @@ Standard COCO dataset format with images and annotations arrays.
 Edit `sample_classes/classes.txt` (or create your own) to define annotation classes.
 
 ### Keyboard Shortcuts
-Press D for Next
-A for Previous
-S for Save 
-E for Edit Mode
-V for View Mode
-M for Drawing Mode
-X for Exiting Drawing Mode
-Delete for Deleting Selection
-ESC for Closing Application
+- **D** - Next Image
+- **A** - Previous Image
+- **S** - Save 
+- **E** - Edit Mode (move/resize existing)
+- **M** - Draw Mode (create new)
+- **X** - View Mode (read-only)
+- **Delete** - Delete selected annotation
+- **Esc** - Cancel draw / View Mode / Exit
+- **F1** - Help Dialog
 
 ### Default Settings
 Edit `utils/config.py` for:
@@ -220,11 +224,10 @@ See `requirements.txt` for complete list:
 
 ## Known Limitations
 
-- **No Label Editing**: The class label of an existing bounding box cannot be changed. To change a label, you must delete the box and recreate it.
+- Sub-pixel precise polygon editing is not currently supported (vertices snap to image pixels).
 
 ## Future Enhancements
 
-- **In-place Label Editing**: Ability to change the class of an existing bounding box without deleting it.
 - Keyboard shortcut customization
 - Additional export formats
 - Batch annotation tools
@@ -234,7 +237,7 @@ See `requirements.txt` for complete list:
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING_UI.md](CONTRIBUTING_UI.md) for:
+Contributions are welcome! Please see [CONTRIBUTING_UI.md](documentation/CONTRIBUTING_UI.md) for:
 - Development setup
 - Code style guidelines
 - Component development

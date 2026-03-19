@@ -55,6 +55,7 @@ class CanvasWidget(QWidget):
         self.editing_box_index = None
         self.editing_poly_index = None
         self.editing_handle = None
+        self.original_poly_on_edit = None  # To store points before dragging
         self.hovered_box_index = None
         self.hovered_poly_index = None
         self.hovered_poly_handle = None # (poly_idx, point_idx)
@@ -141,6 +142,16 @@ class CanvasWidget(QWidget):
                     return i, j
         return None, None
 
+    def get_poly_body_at_pos(self, img_x, img_y):
+        """Return poly_idx if click is inside a polygon body (for moving it)."""
+        import numpy as np
+        import cv2
+        for i, (pts, _) in enumerate(self.polygons):
+            contour = np.array(pts, dtype=np.int32)
+            if cv2.pointPolygonTest(contour, (img_x, img_y), False) >= 0:
+                return i
+        return None
+
     def _update_cursor(self, pos):
         """Update cursor based on hover position."""
         if self.mode != "edit":
@@ -196,15 +207,77 @@ class CanvasWidget(QWidget):
                 self.start_pos = (img_x, img_y)
                 self.original_box_on_edit = self.boxes[box_idx]
                 return # Action handled, stop here.
+        # --- Priority 1a: POLYGON VERTEX DRAG ---
+        # If in edit mode, check if we clicked a polygon vertex
+        if not self.is_drawing_enabled:
+            poly_i, pt_j = self.get_poly_vertex_at_pos(img_x, img_y)
+            if poly_i is not None:
+                logging.info(f"[POLY_EDIT] Dragging vertex {pt_j} of polygon {poly_i}")
+                self.editing_poly_index = poly_i
+                self.editing_handle = pt_j  # reuse editing_handle as vertex index
+                self.start_pos = (img_x, img_y)
+                # Convert to unified index for selection display
+                u_idx = len(self.boxes) + poly_i
+                self.selected_boxes.add(u_idx)
+                self.update()
+                return
 
-        # --- Priority 2: Check for nested drawing or selection ---
+        # --- Priority 1b: Check for polygon selection ---
+        # Only if NOT drawing a new polygon
+        if not (self.current_tool == DrawingTool.POLYGON and self.is_drawing_enabled):
+            candidate_polys = []
+            for i, (pts, _) in enumerate(self.polygons):
+                 contour = np.array(pts, dtype=np.int32)
+                 dist = cv2.pointPolygonTest(contour, (img_x, img_y), False)
+                 if dist >= 0:
+                     area = cv2.contourArea(contour)
+                     candidate_polys.append((area, i, pts))
+
+            if candidate_polys:
+                # 1. Check if any candidate is already selected
+                best_poly_idx = None
+                for _, p_idx, _ in candidate_polys:
+                    u_idx = len(self.boxes) + p_idx
+                    if u_idx in self.selected_boxes:
+                        best_poly_idx = p_idx
+                        break
+                        
+                # 2. If no candidate is selected, pick the smallest one
+                if best_poly_idx is None:
+                    candidate_polys.sort(key=lambda t: t[0])
+                    _, best_poly_idx, _ = candidate_polys[0]
+                
+                u_idx = len(self.boxes) + best_poly_idx
+                logging.info(f"[NESTED_DRAW] Polygon Hit: idx={best_poly_idx} (unified={u_idx})")
+                self.box_clicked_on_canvas.emit(u_idx)
+                
+                # If in edit mode, also start the drag
+                if not self.is_drawing_enabled:
+                    self.editing_poly_index = best_poly_idx
+                    self.editing_handle = 'move'
+                    self.start_pos = (img_x, img_y)
+                    self.original_poly_on_edit = self.polygons[best_poly_idx]
+                return
+
+
+        # --- Priority 2: Check for nested drawing or selection (Boxes) ---
         candidate_boxes = [(w * h, idx, (x, y, w, h)) for idx, (x, y, w, h, _) in enumerate(self.boxes) if x <= img_x < x + w and y <= img_y < y + h]
         logging.info(f"[NESTED_DRAW] Found {len(candidate_boxes)} boxes under cursor for potential selection/drawing.")
 
         if candidate_boxes:
-            # Pick the smallest box under the cursor
-            candidate_boxes.sort(key=lambda t: t[0])
-            _, best_idx, best_bounds = candidate_boxes[0] # Smallest area is at index 0
+            # 1. Check if any candidate is already selected
+            best_idx = None
+            best_bounds = None
+            for _, b_idx, bounds in candidate_boxes:
+                if b_idx in self.selected_boxes:
+                    best_idx = b_idx
+                    best_bounds = bounds
+                    break
+
+            # 2. If no candidate is selected, pick the smallest box
+            if best_idx is None:
+                candidate_boxes.sort(key=lambda t: t[0])
+                _, best_idx, best_bounds = candidate_boxes[0]
             
             logging.info(f"[NESTED_DRAW] Best box: idx={best_idx}, bounds={best_bounds}, is_drawing_enabled={self.is_drawing_enabled}")
 
@@ -246,21 +319,7 @@ class CanvasWidget(QWidget):
              self.update()
              return
 
-        # --- Priority 3: Check for polygon selection ---
-        # Only if NOT drawing a new polygon
-        if not (self.current_tool == DrawingTool.POLYGON and self.is_drawing_enabled):
-            # Check polygons (Unified Index: len(boxes) + idx)
-            for i, (pts, _) in enumerate(self.polygons):
-                 contour = np.array(pts, dtype=np.int32)
-                 # Measure distance, if >= 0 it's inside or on edge
-                 dist = cv2.pointPolygonTest(contour, (img_x, img_y), False)
-                 if dist >= 0:
-                     u_idx = len(self.boxes) + i
-                     logging.info(f"[NESTED_DRAW] Polgyon Hit: idx={i} (unified={u_idx})")
-                     self.box_clicked_on_canvas.emit(u_idx)
-                     return
 
-        # --- Priority 4: If no other action was taken, check if we can draw a new box ---
         if not self.is_drawing_enabled:
             # If not in drawing mode, do not start drawing a new box.
             # This prevents accidental boxes when trying to click/drag the canvas.
@@ -283,31 +342,55 @@ class CanvasWidget(QWidget):
         img_x = max(0, min(img_x, self.image.shape[1] - 1))
         img_y = max(0, min(img_y, self.image.shape[0] - 1))
 
-        # Find smallest box under cursor
+        # Find smallest box under cursor (prioritizing selected)
         candidates = [
             (w * h, idx)
             for idx, (x, y, w, h, _) in enumerate(self.boxes)
             if x <= img_x < x + w and y <= img_y < y + h
         ]
         if candidates:
-            candidates.sort()
-            _, best_idx = candidates[0]
+            best_idx = None
+            for _, b_idx in candidates:
+                if b_idx in self.selected_boxes:
+                    best_idx = b_idx
+                    break
+            
+            if best_idx is None:
+                candidates.sort()
+                _, best_idx = candidates[0]
+                
             logging.info(f"[DOUBLE_CLICK] Box {best_idx} — emitting class_change_requested")
             self.class_change_requested.emit(best_idx)
             return
 
-        # Check polygons — find the one whose bounding rect contains the click
+        # Check polygons — find the selected or smallest valid one under cursor
         box_count = len(self.boxes)
+        candidate_polys = []
         for i, (pts, _) in enumerate(self.polygons):
             if not pts:
                 continue
-            xs = [p[0] for p in pts]
-            ys = [p[1] for p in pts]
-            if min(xs) <= img_x <= max(xs) and min(ys) <= img_y <= max(ys):
-                u_idx = box_count + i
-                logging.info(f"[DOUBLE_CLICK] Polygon {i} (unified={u_idx}) — emitting class_change_requested")
-                self.class_change_requested.emit(u_idx)
-                return
+                
+            contour = np.array(pts, dtype=np.int32)
+            dist = cv2.pointPolygonTest(contour, (img_x, img_y), False)
+            if dist >= 0:
+                area = cv2.contourArea(contour)
+                candidate_polys.append((area, i))
+                
+        if candidate_polys:
+            best_poly_idx = None
+            for _, p_idx in candidate_polys:
+                if (box_count + p_idx) in self.selected_boxes:
+                    best_poly_idx = p_idx
+                    break
+                    
+            if best_poly_idx is None:
+                candidate_polys.sort(key=lambda t: t[0])
+                _, best_poly_idx = candidate_polys[0]
+            
+            u_idx = box_count + best_poly_idx
+            logging.info(f"[DOUBLE_CLICK] Polygon {best_poly_idx} (unified={u_idx}) — emitting class_change_requested")
+            self.class_change_requested.emit(u_idx)
+            return
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for box preview or editing."""
@@ -352,15 +435,35 @@ class CanvasWidget(QWidget):
             self.update()
             return
 
-        # --- Handle polygon vertex drag ---
-        if self.editing_poly_index is not None and isinstance(self.editing_handle, int):
-            pts, class_id = self.polygons[self.editing_poly_index]
-            new_pts = list(pts)
-            new_pts[self.editing_handle] = (img_x, img_y)
-            self.polygons[self.editing_poly_index] = (new_pts, class_id)
-            self.changed = True
-            self.update()
-            return
+        # --- Handle polygon editing ---
+        if self.editing_poly_index is not None:
+            if isinstance(self.editing_handle, int):
+                # Vertex drag
+                pts, class_id = self.polygons[self.editing_poly_index]
+                new_pts = list(pts)
+                new_pts[self.editing_handle] = (img_x, img_y)
+                self.polygons[self.editing_poly_index] = (new_pts, class_id)
+                self.changed = True
+                self.update()
+                return
+            elif self.editing_handle == 'move' and self.start_pos is not None and self.original_poly_on_edit is not None:
+                # Body drag
+                orig_pts, class_id = self.original_poly_on_edit
+                dx = img_x - self.start_pos[0]
+                dy = img_y - self.start_pos[1]
+                
+                new_pts = []
+                for (px, py) in orig_pts:
+                    # Clamp each point to image bounds
+                    nx = max(0, min(px + dx, self.image.shape[1] - 1))
+                    ny = max(0, min(py + dy, self.image.shape[0] - 1))
+                    new_pts.append((nx, ny))
+                
+                self.polygons[self.editing_poly_index] = (new_pts, class_id)
+                self.changed = True
+                self.update()
+                return
+
 
         # --- Handle new box drawing ---
         if self.start_pos:
@@ -403,12 +506,13 @@ class CanvasWidget(QWidget):
             self.update()
             return
 
-        # --- Finalize polygon vertex drag ---
-        if self.editing_poly_index is not None and isinstance(self.editing_handle, int):
-            logging.debug(f"Finished editing polygon vertex {self.editing_handle}")
+        # --- Finalize polygon editing ---
+        if self.editing_poly_index is not None:
+            logging.debug(f"Finished editing polygon {self.editing_poly_index}")
             self.editing_poly_index = None
             self.editing_handle = None
             self.start_pos = None
+            self.original_poly_on_edit = None
             self.changed = True
             self.update()
             return
@@ -416,6 +520,9 @@ class CanvasWidget(QWidget):
         # --- Finalize new box ---
         if self.current_box is None:
             return
+        
+        # --- Finalize new polygon ---
+        
 
         x, y, w, h = self.current_box
         if w > 5 and h > 5:  # Minimum box size
@@ -622,13 +729,8 @@ class CanvasWidget(QWidget):
              color_hex = palette[class_id % len(palette)] if class_id is not None else palette[0]
              color = QColor(color_hex)
              pen = QPen(color)
-             # Thicker pen if selected
-             pen.setWidth(4 if is_selected else 2)
-             if is_selected:
-                 # Add dashed line for selection
-                 pen.setStyle(Qt.DotLine)
-             else:
-                 pen.setStyle(Qt.SolidLine)
+             pen.setWidth(2)
+             pen.setStyle(Qt.SolidLine)
              
              painter.setPen(pen)
              
@@ -647,12 +749,48 @@ class CanvasWidget(QWidget):
              qpoly = QPolygonF(qpoints)
              painter.drawPolygon(qpoly)
 
-             # Draw vertices if selected
-             if is_selected:
-                 painter.setBrush(Qt.white)
-                 painter.setPen(Qt.black)
+             # Draw vertices as draggable handles if in edit mode
+             if self.mode == 'edit':
+                 handle_size = 12
+                 hs = handle_size // 2
+                 painter.setPen(QPen(QColor(255, 255, 255), 2))
+                 painter.setBrush(QColor(30, 120, 255, 230))
                  for qp in qpoints:
-                     painter.drawEllipse(qp, 4, 4)
+                     painter.drawRect(int(qp.x()) - hs, int(qp.y()) - hs, handle_size, handle_size)
+
+             # Draw label for selected polygon
+             if self.classes and class_id < len(self.classes):
+                 class_name = self.classes[class_id]
+             else:
+                 class_name = f"Class {class_id}"
+
+             font = QFont()
+             font.setPointSize(8)
+             painter.setFont(font)
+             fm = painter.fontMetrics()
+             text_w = fm.horizontalAdvance(class_name) + 6
+             text_h = fm.height() + 2
+
+             # Find topmost vertex (lowest y value visually)
+             top_y = min(p.y() for p in qpoints)
+             top_x = next(p.x() for p in qpoints if p.y() == top_y)
+             
+             label_x = int(top_x) + 5
+             label_y = int(top_y) - text_h - 2
+             if label_y < 0:
+                 label_y = int(top_y) + 5
+                 
+             label_x = max(2, min(label_x, self.width() - text_w - 2))
+             label_y = max(2, min(label_y, self.height() - text_h - 2))
+
+             # Draw background rectangle (semi-opaque black)
+             painter.setBrush(QColor(0, 0, 0, 180))
+             painter.setPen(Qt.NoPen)
+             painter.drawRect(label_x - 3, label_y - 1, text_w, text_h)
+
+             # Draw text in white
+             painter.setPen(QColor(255, 255, 255))
+             painter.drawText(label_x, label_y + fm.ascent() + 0, class_name)
 
         # Draw Current Polygon (in progress)
         if self.current_polygon:

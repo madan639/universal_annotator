@@ -21,7 +21,7 @@ json_helper = JSONHelper()
 
 def load_txt_annotations(file_path: str, img_shape: Tuple[int, int], mode: str = None) -> Tuple[List, List]:
     """
-    Load TXT annotations (YOLO style).
+    Load TXT annotations (YOLO Format).
     Returns (boxes, polygons).
     boxes: [(x, y, w, h, class_id)]
     polygons: [([(x,y)...], class_id)]
